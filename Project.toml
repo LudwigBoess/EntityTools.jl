@@ -1,0 +1,13 @@
+name = "EntityTools"
+uuid = "b454753b-5441-4cda-8f2f-910cbcbb7d97"
+authors = ["Ludwig Böss <ludwig.boess@outlook.de> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
