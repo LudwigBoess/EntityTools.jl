@@ -3,7 +3,19 @@ uuid = "b454753b-5441-4cda-8f2f-910cbcbb7d97"
 authors = ["Ludwig Böss <ludwig.boess@outlook.de> and contributors"]
 version = "0.1.0"
 
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
 [compat]
+CairoMakie = "0.13.4"
+HDF5 = "0.17.2"
+Printf = "1.11.0"
+StatsBase = "0.34.4"
+Unitful = "1.22.0"
 julia = "1.10"
 
 [extras]
