@@ -1,3 +1,5 @@
+using ProgressMeter
+
 """
     phase_map(x_q, y_q, x_lim, y_lim; 
               xbins::Int=400, ybins::Int=50,

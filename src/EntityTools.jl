@@ -7,6 +7,7 @@ using StatsBase
 using Unitful
 using Distributions
 using StatsBase
+using ProgressMeter
 
 include("calc/phase.jl")
 include("calc/spectra.jl")
