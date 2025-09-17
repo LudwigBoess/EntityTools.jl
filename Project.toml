@@ -4,6 +4,7 @@ authors = ["Ludwig Böss <ludwig.boess@outlook.de> and contributors"]
 version = "0.1.0"
 
 [deps]
+ADIOS2 = "e0ce9d3b-0dbd-416f-8264-ccca772f60ec"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
@@ -14,7 +15,8 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [compat]
-CairoMakie = "0.13.4"
+ADIOS2 = "1.4.0"
+CairoMakie = ">=0.13.4"
 DelimitedFiles = "1.9.1"
 Distributions = "0.25.119"
 HDF5 = "0.17.2"

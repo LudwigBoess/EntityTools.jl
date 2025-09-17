@@ -1,15 +1,44 @@
-using ADIOS2
-using Printf
+abstract type DataInfo end
 
-file = adios_open_serial(fi, mode_readRandomAccess)
-attrs = adios_all_attribute_names(file)
-variables = adios_all_variable_names(file)
+struct FieldInfo <: DataInfo
+    fields::Vector{String}
+end
 
-t = adios_load(file, "Time", 0)
+struct ParticleInfo <: DataInfo
+    species::Vector{Int64}
+    properties::Vector{String}
+end
 
-function read_times(output_path, subfolder, read_steps=false)
+struct SpectrumInfo <: DataInfo
+    species::Vector{Int64}
+end
+
+"""
+    struct EntityData 
+        path::String
+        steps::Vector{Int64}
+        times::Vector{Float64}
+        settings::Dict{String, Any}
+        fields::Union{FieldInfo, Nothing}
+        particles::Union{ParticleInfo, Nothing}
+        spectra::Union{SpectrumInfo, Nothing}
+    end
+
+
+"""
+struct EntityData 
+    path::String
+    steps::Vector{Int64}
+    times::Vector{Float64}
+    settings::Dict{String, Any}
+    fields::Union{FieldInfo, Nothing}
+    particles::Union{ParticleInfo, Nothing}
+    spectra::Union{SpectrumInfo, Nothing}
+end
+
+function read_times(sim_path, subfolder, read_steps=false)
     # find all available files in the folder
-    files = readdir(joinpath(output_path, subfolder))
+    files = readdir(joinpath(sim_path, subfolder))
     Nfiles = length(files)
     # read written steps
     i_steps = Vector{Int64}(undef, Nfiles)
@@ -20,7 +49,7 @@ function read_times(output_path, subfolder, read_steps=false)
     # read times
     times = Vector{Float64}(undef, Nfiles)
     for i = 1:Nfiles
-        file = adios_open_serial(joinpath(output_path, subfolder, "$subfolder.$(@sprintf("%08i", i_steps[i])).bp"), mode_readRandomAccess)
+        file = adios_open_serial(joinpath(sim_path, subfolder, "$subfolder.$(@sprintf("%08i", i_steps[i])).bp"), mode_readRandomAccess)
         times[i] = adios_load(file, "Time", 0)
         close(file)
     end
@@ -32,25 +61,23 @@ function read_times(output_path, subfolder, read_steps=false)
     end
 end
 
-function read_field_info(output_path)
+function read_field_info(sim_path; times=nothing, i_steps=nothing)
 
-    times, i_steps = read_times(output_path, "fields", true)
+    times, i_steps = read_times(sim_path, "fields", true)
 
-    file = adios_open_serial(joinpath(output_path, "particles", "fields.$(@sprintf("%08i", i_steps[1])).bp"), mode_readRandomAccess)
+    file = adios_open_serial(joinpath(sim_path, "fields", "fields.$(@sprintf("%08i", i_steps[1])).bp"), mode_readRandomAccess)
     variables = adios_all_variable_names(file)
     out_fields = variables[startswith.(variables, "f")]
     for i = 1:length(out_fields)
         out_fields[i] = out_fields[i][2:end]
     end
 
-    return FieldInfo(i_steps, times, out_fields)
+    return FieldInfo(out_fields)
 end
 
-function read_particle_info(output_path)
+function read_particle_info(sim_path)
 
-    times, i_steps = read_times(output_path, "particles", true)
-
-    file = adios_open_serial(joinpath(output_path, "particles", "particles.$(@sprintf("%08i", i_steps[1])).bp"), mode_readRandomAccess)
+    file = adios_open_serial(joinpath(sim_path, "particles", "particles.$(@sprintf("%08i", 1)).bp"), mode_readRandomAccess)
     variables = adios_all_variable_names(file)
     out_fields = variables[startswith.(variables, "p")]
     for i = 1:length(out_fields)
@@ -63,16 +90,12 @@ function read_particle_info(output_path)
     # get unique properties
     properties = unique([pr[1:end-2] for pr in out_fields])
 
-    return ParticleInfo(i_steps, times, species, properties)
+    return ParticleInfo(species, properties)
 end
 
-function read_spectrum_info(output_path; times=nothing, i_steps=nothing)
+function read_spectrum_info(sim_path)
 
-    if isnothing(times) || isnothing(i_steps)
-        times, i_steps = read_times(output_path, "particles", true)
-    end
-
-    file = adios_open_serial(joinpath(output_path, "particles", "particles.$(@sprintf("%08i", i_steps[1])).bp"), mode_readRandomAccess)
+    file = adios_open_serial(joinpath(sim_path, "spectrum", "spectrum.$(@sprintf("%08i", 1)).bp"), mode_readRandomAccess)
     variables = adios_all_variable_names(file)
     out_fields = variables[startswith.(variables, "s")]
     for i = 1:length(out_fields)
@@ -82,7 +105,7 @@ function read_spectrum_info(output_path; times=nothing, i_steps=nothing)
     # N is always written
     species = [parse(Int, sp[end]) for sp in out_fields[startswith.(out_fields, "N")]]
 
-    return SpectrumInfo(i_steps, times, species)
+    return SpectrumInfo(species)
 end
 
 function read_run_settings(sim_path, subfolder)
@@ -96,7 +119,11 @@ function read_run_settings(sim_path, subfolder)
     return settings
 end
 
+"""
+    EntityData(sim_path::String)
 
+Reads an overview of the simulation into an `EntityData` struct.
+"""
 function EntityData(sim_path::String)
 
     subfolders = readdir(sim_path)
@@ -104,24 +131,26 @@ function EntityData(sim_path::String)
         error("No output subfolders found in $sim_path")
     end
 
-    times, i_steps = read_times(output_path, subfolder, read_steps=false)
+    # reading output files and times
+    times, i_steps = read_times(sim_path, subfolders[1], true)
 
     field_info = nothing
     if "fields" in subfolders
-        field_info = read_field_info(sim_path; times, i_steps)
+        field_info = read_field_info(sim_path)
     end
     particle_info = nothing
     if "particles" in subfolders
-        particle_info = read_particle_info(sim_path; times, i_steps)
+        particle_info = read_particle_info(sim_path)
     end
     spectrum_info = nothing
-    if "particles" in subfolders
-        spectrum_info = read_spectrum_info(sim_path; times, i_steps)
+    if "spectrum" in subfolders
+        spectrum_info = read_spectrum_info(sim_path)
     end
 
-    runsettings = read_run_settings(sim_path, sububfolders[1])
+    # read the settings of the simulation
+    runsettings = Dict("dummy" => 0) #read_run_settings(sim_path, subfolders[1])
 
-    return EntityData(sim_path, i_steps, times, field_info, particle_info, spectrum_info)
+    return EntityData(sim_path, i_steps, times, runsettings, field_info, particle_info, spectrum_info)
 end
 
 
