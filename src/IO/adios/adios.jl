@@ -61,6 +61,66 @@ function read_times(sim_path, subfolder, read_steps=false)
     end
 end
 
+"""
+    find_idxs(run_info, i_step, t, i, reduction_function, verbose)
+
+
+"""
+function find_idxs(run_info, i_step, t, i, reduction_function, verbose)
+
+    if isnothing(i_step) && isnothing(t) && isnothing(i)
+        error("Must provide either i_step, time t, or index i to read a field.")
+    end
+        
+    # case for multiple files
+    if !isnothing(reduction_function)
+        if !isnothing(i_step)
+            if length(i_step) == 2
+                i = findfirst(isequal(i_step[1]), run_info.steps):findfirst(isequal(i_step[2]), run_info.steps)
+            else
+                i = [findfirst(isequal(i_step[j]), run_info.steps) for j = 1:length(i_step)]
+            end
+        end
+        if !isnothing(t)
+            if length(t) == 2
+                i = findall(x -> (x >= t[1]) && (x <= t[2]), run_info.times)
+            else
+                i = [argmin(abs.(run_info.times .- t[j])) for j = 1:length(t)]
+            end
+        end
+
+        if i[1] < 1 || i[end] > length(run_info.steps)
+            error("Index i=$i is out of bounds. Must be between 1 and $(length(run_info.steps)).")
+        end
+    else # no reduction function -> single step
+        if (!isnothing(i_step) && length(i_step) > 1) || 
+            (!isnothing(t) &&  length(t) > 1) || 
+            (!isnothing(i) && length(i) > 1)
+            error("You can only read one file in this mode. To get the properties over multiple files please provide a reduction_function.")
+        end
+
+        if !isnothing(i_step)
+            i = findfirst(isequal(i_step), run_info.steps)
+            if isnothing(i)
+                error("Step $i_step not found in field data.")
+            end
+        end
+        if !isnothing(t)
+            i = argmin(abs.(run_info.times .- t))
+            if verbose
+                @info "Requested time $t: reading closest time $(run_info.times[i]) at step $(run_info.steps[i])."
+            end
+        end
+
+        if i < 1 || i > length(run_info.steps)
+            error("Index i=$i is out of bounds. Must be between 1 and $(length(run_info.steps)).")
+        end
+    end
+
+    return i
+
+end
+
 function read_field_info(sim_path; times=nothing, i_steps=nothing)
 
     times, i_steps = read_times(sim_path, "fields", true)
