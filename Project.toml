@@ -16,7 +16,7 @@ Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [compat]
 ADIOS2 = "1.4.0"
-CairoMakie = ">=0.13.4"
+CairoMakie = ">=0.13"
 DelimitedFiles = "1.9.1"
 Distributions = "0.25.119"
 HDF5 = "0.17.2"
