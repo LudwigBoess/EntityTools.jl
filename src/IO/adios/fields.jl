@@ -1,4 +1,4 @@
-function read_particles_reduced(run_info::EntityData, species::Integer, 
+function read_fields_reduced(run_info::EntityData, species::Integer, 
                     properties::Vector{String}; 
                     i, verbose)
 
@@ -47,7 +47,7 @@ function read_field(run_info::EntityData, field_names::Vector{String};
     i = find_idxs(run_info, i_step, t, i, reduction_function, verbose)
 
     if !isnothing(reduction_function)
-        return read_particles_reduced(run_info, species, properties; 
+        return read_fields_reduced(run_info, species, properties; 
                     i=i,
                     reduction_function=reduction_function,
                     verbose=verbose)
