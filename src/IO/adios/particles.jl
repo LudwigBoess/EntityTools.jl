@@ -1,3 +1,11 @@
+"""
+    read_particles_reduced(run_info::EntityData, species::Integer, 
+                    properties::Vector{String}; 
+                    i=nothing, reduction_function=nothing,
+                    verbose=true)
+
+Read `properties` for particle `species` and apply `reduction_function` to the data.
+"""
 function read_particles_reduced(run_info::EntityData, species::Integer, 
                     properties::Vector{String}; 
                     i=nothing, reduction_function=nothing,
