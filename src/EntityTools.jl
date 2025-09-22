@@ -24,6 +24,7 @@ module EntityTools
             parse_timing,
             EntityData,
             read_particles,
-            read_field
+            read_field,
+            read_spectrum
 
 end
