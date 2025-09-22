@@ -223,7 +223,7 @@ Reads the info on what fields are stored in the `spectrum` files.
 function read_spectrum_info(sim_path)
 
     # open first available file
-    file = select_first_file(sim_path, "spectrum")
+    file = select_first_file(sim_path, "spectra")
     # read all available output fields
     variables = adios_all_variable_names(file)
     # spectrum fields start with `s`
@@ -298,7 +298,7 @@ function EntityData(sim_path::String)
 
     # if spectra are written, read their info
     spectrum_info = nothing
-    if "spectrum" in subfolders
+    if "spectra" in subfolders
         spectrum_info = read_spectrum_info(sim_path)
     end
 
