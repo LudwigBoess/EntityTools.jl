@@ -18,7 +18,7 @@ function read_spectrum(run_info::EntityData, species::Integer;
     data["step"] = run_info.steps[i]
 
     # construct the file name
-    fi = joinpath(run_info.path, "spectrum", "spectrum.$(@sprintf("%08i", run_info.steps[i])).bp")
+    fi = joinpath(run_info.path, "spectra", "spectra.$(@sprintf("%08i", run_info.steps[i])).bp")
     # read the field
     file = adios_open_serial(fi, mode_readRandomAccess)
     data["E"] = adios_load(file, "sEbn", 0)
