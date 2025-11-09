@@ -1,6 +1,5 @@
 module EntityTools
 
-    using HDF5
     using CairoMakie
     using Printf
     using StatsBase
