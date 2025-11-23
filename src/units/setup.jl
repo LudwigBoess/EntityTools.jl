@@ -1,29 +1,19 @@
 """
     EntityUnits(data::EntityData)
 
-Reads the normalized units from the first available file in the `fields`, `particles`, or `spectra` subfolders of the simulation path.
+Constructs the units from the simulation settings stored in `data`.
 Returns an [`EntityUnits`](@ref) struct containing the normalized units for the simulation.
 """
 function EntityUnits(data::EntityData)
     
-    if !isnothing(data.fields)
-        file = select_first_file(data.path, "fields")
-    elseif !isnothing(data.particles)
-        file = select_first_file(data.path, "particles")
-    elseif !isnothing(data.spectra)
-        file = select_first_file(data.path, "spectra")
-    else
-        error("No file found in fields, particles, or spectra subfolders.")
-    end
-
-    return EntityUnits( adios_attribute_data(file, "scales.skindepth0"), 
-                        adios_attribute_data(file, "scales.larmor0"),
-                        adios_attribute_data(file, "scales.sigma0"),
-                        adios_attribute_data(file, "scales.B0"),
-                        adios_attribute_data(file, "scales.omegaB0"),
-                        adios_attribute_data(file, "scales.q0"),
-                        adios_attribute_data(file, "scales.V0"),
-                        adios_attribute_data(file, "scales.n0") )
+    return EntityUnits( data.settings["scales.skindepth0"], 
+                        data.settings["scales.larmor0"],
+                        data.settings["scales.sigma0"],
+                        data.settings["scales.B0"],
+                        data.settings["scales.omegaB0"],
+                        data.settings["scales.q0"],
+                        data.settings["scales.V0"],
+                        data.settings["scales.n0"] )
 end
 
 """
