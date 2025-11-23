@@ -1,19 +1,19 @@
 """
     read_particles_reduced(run_info::EntityData, species::Integer, 
-                    properties::Vector{String}; 
-                    i=nothing, reduction_function=nothing,
-                    verbose=true)
+                           properties::Vector{String}; 
+                           i=nothing, reduction_function=nothing,
+                           slice=nothing,
+                           verbose=false)
 
 Read `properties` for particle `species` and apply `reduction_function` to the data.
 """
 function read_particles_reduced(run_info::EntityData, species::Integer, 
-                    properties::Vector{String}; 
-                    i=nothing, reduction_function=nothing,
-                    slice=nothing,
-                    verbose=true)
+                                properties::Vector{String}; 
+                                i=nothing, reduction_function=nothing,
+                                slice=nothing,
+                                verbose=false)
 
-    
-
+    # allocate output data
     data = Dict()
     data["t"] = run_info.times[i]
     data["step"] = run_info.steps[i]
@@ -24,11 +24,14 @@ function read_particles_reduced(run_info::EntityData, species::Integer,
 
     # loop over files
     for (j, _step) in enumerate(i)
+        if verbose
+            @info "reading step $(run_info.steps[_step])..."
+        end
         # read the data of the current timestep
         step_data = read_particles(run_info, species, properties; 
                     i_step=run_info.steps[_step],
                     slice=slice,
-                    verbose=verbose)
+                    verbose=false)
 
         # reduce the particles
         for prop in properties
@@ -41,7 +44,7 @@ end
 
 
 """
-    reduce_read_positions(sel::Array{<:Integer})
+    reduce_read_positions(sel)
 
 Reduces the individual read positions by finding sub-ranges. 
 Returns an array of read indices and an array with the number of entries per index.
@@ -91,7 +94,7 @@ function read_particles(run_info::EntityData, species::Integer,
                         i_step=nothing, t=nothing, i=nothing,
                         reduction_function=nothing,
                         slice=nothing,
-                        verbose=true)
+                        verbose=false)
 
     for prop in properties
         field_name = "$(prop)_$(species)"
@@ -123,6 +126,10 @@ function read_particles(run_info::EntityData, species::Integer,
     variables = adios_all_variable_names(file)
     X_fields = variables[startswith.(variables, "pX")]
     Ndims = unique([X[3] for X in X_fields])
+
+    if verbose && !isnothing(slice)
+        @info "applying spatial filters..."
+    end
 
     if isnothing(slice)
         slice = [ [-Inf, Inf] for _ in 1:length(Ndims) ]
@@ -156,20 +163,32 @@ function read_particles(run_info::EntityData, species::Integer,
     end
 
     if verbose
-        println("selected $(length(sel)) particles after applying spatial filters.")
+        @info "reading $(length(sel)) particles."
+        @info "preparing read selections..."
     end
+
     # construct start positions and counts for bulk read
     start_arr, count_arr = reduce_read_positions(sel)
+
+    if verbose
+        @info "reduced to $(length(start_arr)) read operations."
+    end
+
     # total number of particles to read
     n_to_read = sum(count_arr)
 
     start_coords = Tuple(start_arr) 
     count_dims   = Tuple(count_arr)
 
+    # prepare the reads
+    if verbose
+        @info "preparing reads..."
+    end
+
     for prop in properties
         field_name = "$(prop)_$(species)"
         if verbose
-            println("preparing property $prop for species $species...")
+            @info "preparing property $prop for species $species..."
         end
         part_var = inquire_variable(file.io, "p$field_name")
         # allocate array
@@ -188,7 +207,7 @@ function read_particles(run_info::EntityData, species::Integer,
 
 
     if verbose
-        println("performing reads...")
+        @info "performing reads..."
     end
     # perform the reads
     perform_gets(file.engine)
@@ -197,7 +216,7 @@ function read_particles(run_info::EntityData, species::Integer,
     close(file)
 
     if verbose
-        println("done reading particle data.")
+        @info "done reading particle data."
     end
 
     return data
