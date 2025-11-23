@@ -28,7 +28,6 @@ function read_fields_reduced(run_info::EntityData, field_names::Vector{String};
 
         # reduce the fields
         for field_name in field_names
-            println("Reducing field $field_name at step $(j)...")
             data[field_name][j] = reduction_function(step_data[field_name])
         end
     end
@@ -84,33 +83,48 @@ function read_field(run_info::EntityData, field_names::Vector{String};
     X_fields = variables[startswith.(variables, "X")]
     Ndims = unique([X[2] for X in X_fields])
 
+    if verbose && !isnothing(slice)
+        @info "applying spatial filters..."
+    end
+
+    # default: read full domain
+    if isnothing(slice)
+        slice = [ [-Inf, Inf] for _ in 1:length(Ndims) ]
+    end
+
     # define selection
     start_arr = Vector{Int}(undef, length(Ndims))
     count_arr = Vector{Int}(undef, length(Ndims))
 
-    for (i, Ndim) in enumerate(Ndims)
-        X = adios_load(file, "X$(Ndim)", 0)
-        if isnothing(slice)
-            start_arr[i] = firstindex(X)-1 # ADIOS uses 0-based indexing
-            count_arr[i] = length(X)
+    for (j, Ndim) in enumerate(Ndims)
+        if slice[j] == [-Inf, Inf]
+            grid_var = inquire_variable(file.io, "X$(Ndim)")
+            start_arr[j] = 0 # ADIOS uses 0-based indexing
+            count_arr[j] = Int64(ADIOS2.shape(grid_var)[1])
         else
-            start_arr[i] = findfirst(X .>= slice[i][1])-1
-            count_arr[i] = findlast(X .<= slice[i][2]) - start_arr[i]
+            X = adios_load(file, "X$(Ndim)", 0)
+            start_arr[j] = findfirst(X .>= slice[j][1]) - 1
+            count_arr[j] = findlast(X .<= slice[j][2]) - start_arr[j]
         end
     end
 
     start_coords = Tuple(start_arr) 
     count_dims   = Tuple(count_arr)
 
+    if verbose
+        @info "reading $(count_dims) cells."
+        @info "preparing reads..."
+    end
+
     # read grid positions
-    for (i, Ndim) in enumerate(Ndims)
+    for (j, Ndim) in enumerate(Ndims)
         # select the variable to read
         grid_var = inquire_variable(file.io, "X$(Ndim)")
         # prepare selection
         set_selection(grid_var, start_coords, count_dims)
         # Dynamic allocation based on variable type
         T = type(grid_var)
-        data["X$(Ndim)"] = Array{T}(undef, count_dims[i])
+        data["X$(Ndim)"] = Array{T}(undef, count_dims[j])
         get(file.engine, grid_var, data["X$(Ndim)"])
     end
 
@@ -125,11 +139,19 @@ function read_field(run_info::EntityData, field_names::Vector{String};
         get(file.engine, grid_var, data["$field_name"])
     end
 
+    if verbose
+        @info "performing reads..."
+    end
+
     # perform the reads
     perform_gets(file.engine)
 
     # remember to close the file
     close(file)
+
+    if verbose
+        @info "done reading field data."
+    end
 
     return data
 end
