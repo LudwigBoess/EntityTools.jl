@@ -92,12 +92,21 @@ function read_times(sim_path, subfolder, read_steps=false)
 end
 
 """
+    find_closest_time(run_info::EntityData, t::Real)
+
+Finds the time in the available outputs that is closest to the requested one
+"""
+function find_closest_time(run_info::EntityData, t::Real)
+    return run_info.times[argmin(abs.(run_info.times .- t))]
+end
+
+"""
     find_idxs(run_info, i_step, t, i, reduction_function, verbose)
 
 Find requested output file(s) based on single/array of steps `i_step`, time `t` or file number `i`.
 If a `reduction_function` is provided, options are interpreted as arrays.
 """
-function find_idxs(run_info, i_step, t, i, reduction_function, verbose)
+function find_idxs(run_info::EntityData, i_step, t, i, reduction_function, verbose)
 
     if isnothing(i_step) && isnothing(t) && isnothing(i)
         error("Must provide either i_step, time t, or index i to read a field.")

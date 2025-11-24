@@ -22,6 +22,7 @@ module EntityTools
             spectrum,
             parse_timing,
             EntityData,
+            find_closest_time,
             read_particles,
             read_field,
             read_spectrum
