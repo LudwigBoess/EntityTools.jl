@@ -121,7 +121,7 @@ function read_field(run_info::EntityData, field_names::Vector{String};
         # select the variable to read
         grid_var = inquire_variable(file.io, "X$(Ndim)")
         # prepare selection
-        set_selection(grid_var, start_coords, count_dims)
+        set_selection(grid_var, (start_coords[j],), (count_dims[j],))
         # Dynamic allocation based on variable type
         T = type(grid_var)
         data["X$(Ndim)"] = Array{T}(undef, count_dims[j])
