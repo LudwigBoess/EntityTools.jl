@@ -9,6 +9,7 @@ module EntityTools
     using ProgressMeter
     using ADIOS2
     using Printf
+    using FFTW
 
     include("IO/adios/adios.jl")
     include("IO/adios/fields.jl")
@@ -16,6 +17,7 @@ module EntityTools
     include("IO/adios/spectra.jl")
     include("calc/phase.jl")
     include("calc/spectra.jl")
+    include("calc/powerspectrum.jl")
     include("debug/parse_timing.jl")
 
     export phase_map,
@@ -25,6 +27,7 @@ module EntityTools
             find_closest_time,
             read_particles,
             read_field,
-            read_spectrum
+            read_spectrum,
+            power_spectrum
 
 end
