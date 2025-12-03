@@ -280,7 +280,11 @@ function EntityData(sim_path::String)
     end
 
     # check which output folders are present
-    subfolders = readdir(sim_path)
+    all_files = readdir(sim_path)
+
+    # filter out only the directories
+    subfolders = filter(entry -> isdir(joinpath(sim_path, entry)), all_files)
+
     # make sure to not try to read a plots folder
     filter!(x -> x != "Plots", subfolders)
     filter!(x -> x != "plots", subfolders)
