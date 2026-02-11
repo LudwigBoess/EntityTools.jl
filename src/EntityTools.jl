@@ -10,6 +10,7 @@ module EntityTools
     using ADIOS2
     using Printf
     using TOML
+    using FFTW
 
     include("IO/adios/adios.jl")
     include("IO/adios/fields.jl")
@@ -17,6 +18,7 @@ module EntityTools
     include("IO/adios/spectra.jl")
     include("calc/phase.jl")
     include("calc/spectra.jl")
+    include("calc/powerspectrum.jl")
     include("debug/parse_timing.jl")
     include("units/structs.jl")
     include("units/setup.jl")
@@ -29,9 +31,11 @@ module EntityTools
             spectrum,
             parse_timing,
             EntityData,
+            EntityUnits,
+            find_closest_time,
             read_particles,
             read_field,
             read_spectrum,
-            EntityUnits
+            power_spectrum
 
 end
