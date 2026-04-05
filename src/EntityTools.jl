@@ -11,11 +11,13 @@ module EntityTools
     using Printf
     using TOML
     using FFTW
+    using WriteVTK 
 
     include("IO/adios/adios.jl")
     include("IO/adios/fields.jl")
     include("IO/adios/particles.jl")
     include("IO/adios/spectra.jl")
+    include("IO/vtk/write_vtk.jl")
     include("calc/phase.jl")
     include("calc/spectra.jl")
     include("calc/powerspectrum.jl")
@@ -26,6 +28,7 @@ module EntityTools
     include("units/speed.jl")
     include("units/time.jl")
     include("units/Bfield.jl")
+    include("units/temperature.jl")
 
     export phase_map,
             spectrum,
@@ -36,6 +39,8 @@ module EntityTools
             read_particles,
             read_field,
             read_spectrum,
-            power_spectrum
+            bp_to_vtk,
+            power_spectrum,
+            get_Temp,
 
 end
