@@ -1,144 +1,273 @@
-"""
-    flatten_powerspec(dim::Int, data; verbose::Bool=false)
-
-Computes a 1D powerspectrum for a
-"""
-flatten_powerspec(dim::Int, data; verbose::Bool=false) = flatten_powerspec(Val(dim), data; verbose)
+using FFTW
 
 """
+    power_spectrum(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
 
+Computes the power spectrum of the given fields. 
+The fields are expected to be 3D arrays with dimensions (nx, ny, nz) or 2D arrays with dimensions (nx, ny). 
+The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
 """
-flatten_powerspec(::Val{1}, spectrum; verbose::Bool=false) = ifftshift(spectrum)
-
-"""
-
-"""
-function flatten_powerspec(::Val{2}, spectrum; verbose::Bool=false)
-    N = size(spectrum, 1)
-    center = N ÷ 2 + 1
-    
-    # Maximum possible radius is corner of the box, but usually we just go to Nyquist (N/2)
-    max_r = floor(Int, N / 2)
-    
-    # Arrays to store sum of magnitudes and count of pixels per radius bin
-    radial_sum = zeros(Float64, max_r + 1)
-    radial_count = zeros(Int, max_r + 1)
-    
-    if verbose
-        println("Computing radial average (1D spectrum)...")
-        p = Progress(N^2)
-    end
-    
-    @inbounds for j in 1:N, i in 1:N
-        # Calculate distance from center (DC component)
-        dx = i - center
-        dy = j - center
-        dist = sqrt(dx^2 + dy^2)
-        
-        # Determine integer bin index (0 to max_r)
-        bin_idx = round(Int, dist)
-        
-        # Only accumulate if within our interest range
-        if bin_idx <= max_r
-            # Julia arrays are 1-based, so map bin 0 -> index 1
-            radial_sum[bin_idx + 1] += spectrum[i, j]
-            radial_count[bin_idx + 1] += 1
-        end
-
-        if verbose
-            # count up progress meter
-            next!(p)
-        end
-    end
-    
-    # avoid division by zero
-    radial_avg = zeros(Float64, length(radial_sum))
-    @inbounds for i in 1:length(radial_sum)
-        if radial_count[i] > 0
-            radial_avg[i] = radial_sum[i] / radial_count[i]
-        end
-    end
-    
-    return radial_avg
+function power_spectrum(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
+    if ndims(field_x) == 2
+        return power_spectrum_2D(field_x, field_y, field_z; cells_per_skindepth)
+    elseif ndims(field_x) == 3
+        return power_spectrum_3D(field_x, field_y, field_z; k_norm = cells_per_skindepth)
+    else
+        error("Unsupported number of dimensions: $(ndims(field_x)). Only 2D and 3D arrays are supported.")
+    end 
 end
 
 """
+    power_spectrum(field::AbstractArray; cells_per_skindepth = 1.0)
+
+Computes the power spectrum of a single scalar field. 
+The field is expected to be a 3D array with dimensions (nx, ny, nz) 
+or a 2D array with dimensions (nx, ny). 
+The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
+"""
+function power_spectrum(field::AbstractArray; cells_per_skindepth = 1.0)
+    if ndims(field) == 2
+        return power_spectrum_2D(field; cells_per_skindepth = cells_per_skindepth)
+    elseif ndims(field) == 3
+        return power_spectrum_3D(field; cells_per_skindepth = cells_per_skindepth)
+    else
+        error("Unsupported number of dimensions: $(ndims(field)). Only 2D and 3D arrays are supported.")
+    end 
+end
+
+
+# =====================================================================
+# 2D Power Spectrum Implementation
+# =====================================================================
 
 """
-function flatten_powerspec(::Val{3}, spectrum; verbose::Bool=false)
-    N = size(spectrum, 1)
-    center = N ÷ 2 + 1
-    
-    # Maximum possible radius is corner of the box, but usually we just go to Nyquist (N/2)
-    max_r = floor(Int, N / 2)
-    
-    # Arrays to store sum of magnitudes and count of pixels per radius bin
-    radial_sum = zeros(Float64, max_r + 1)
-    radial_count = zeros(Int, max_r + 1)
-    
-    if verbose
-        println("Computing radial average (1D spectrum)...")
-        p = Progress(N)
-    end
-    
-    @inbounds for k in 1:N, j in 1:N, i in 1:N
-        # Calculate distance from center (DC component)
-        dx = i - center
-        dy = j - center
-        dz = k - center
-        dist = sqrt(dx^2 + dy^2 + dz^2)
-        
-        # Determine integer bin index (0 to max_r)
-        bin_idx = round(Int, dist)
-        
-        # Only accumulate if within our interest range
-        if bin_idx <= max_r
-            # Julia arrays are 1-based, so map bin 0 -> index 1
-            radial_sum[bin_idx + 1] += spectrum[i, j, k]
-            radial_count[bin_idx + 1] += 1
-        end
+    power_spectrum_2D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
 
-        if verbose
-            # count up progress meter
-            next!(p)
+Computes the 2D power spectrum of the given fields. The fields are expected to be 3D arrays with dimensions (nx, ny, nz) or 2D arrays with dimensions (nx, ny). 
+The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
+"""
+function power_spectrum_2D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
+    nx, ny = size(field_x, 1), size(field_x, 2)
+
+    # Calculate frequencies
+    kx = fftfreq(nx, cells_per_skindepth)
+    ky = rfftfreq(ny, cells_per_skindepth)
+    kmin = ky[2] 
+    
+    # Perform 2D real fourier transform 
+    # (halves the second dimension as specified by the tuple (2,1))
+    field_x_fft = rfft(field_x, (2, 1))
+    field_y_fft = rfft(field_y, (2, 1))
+    field_z_fft = rfft(field_z, (2, 1))
+    
+    nx_fft, ny_fft = size(field_x_fft, 1), size(field_x_fft, 2)
+    
+    # Determine maximum k to setup bins correctly
+    kmax = sqrt(maximum(abs, kx)^2 + ky[end]^2)
+    k_bins = collect(0:kmin:(kmax - kmin/10))
+    nbins = length(k_bins)
+    
+    amp = zeros(nbins)
+    
+    # Loop over Fourier modes and bin by kperp
+    for j in 1:ny_fft
+        # Multiply energy by 2 for internal RFFT frequencies
+        nf = (1 < j < ny_fft) ? 2.0 : 1.0
+        ky_val = ky[j]
+        
+        for i in 1:nx_fft
+            kx_val = kx[i]
+            kperp = sqrt(kx_val^2 + ky_val^2)
+            
+            # Compute bin index
+            bin_idx = floor(Int, kperp / kmin) + 1
+            
+            if 1 <= bin_idx <= nbins
+                # Calculate energy on the fly
+                energy = (abs2(field_x_fft[i, j]) + 
+                          abs2(field_y_fft[i, j]) + 
+                          abs2(field_z_fft[i, j])) * nf
+                
+                amp[bin_idx] += energy
+            end
         end
     end
-    
-    # avoid division by zero
-    radial_avg = zeros(Float64, length(radial_sum))
-    for i in 1:length(radial_sum)
-        if radial_count[i] > 0
-            radial_avg[i] = radial_sum[i] / radial_count[i]
-        end
-    end
-    
-    return radial_avg
+
+    return k_bins, amp
 end
 
 """
+    power_spectrum_2D(field::AbstractArray; cells_per_skindepth = 1.0)
+Computes the 2D power spectrum of a single scalar field. The field is expected to be a 2D array with dimensions (nx, ny). The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
+"""
+function power_spectrum_2D(field::AbstractArray; cells_per_skindepth = 1.0)
+    nx, ny = size(field)
+    
+    # Frequencies: rfft halves the dimension listed first in the region tuple.
+    # Below, rfft(field, (2, 1)) will halve dimension 2 (ny).
+    kx = fftfreq(nx, cells_per_skindepth)
+    ky = rfftfreq(ny, cells_per_skindepth)
+    kmin = ky[2] 
+    
+    # 2D RFFT 
+    field_fft = rfft(field, (2, 1))
+    nx_fft, ny_fft = size(field_fft)
+    
+    # Setup bins
+    kmax = sqrt(maximum(abs, kx)^2 + ky[end]^2)
+    k_bins = collect(0:kmin:(kmax - kmin/10))
+    nbins = length(k_bins)
+    
+    amp = zeros(nbins)
+    
+    # Single-pass loop fusion (Column-major iteration)
+    @inbounds for j in 1:ny_fft
+        # Reality condition: double energy for internal frequencies
+        nf = (1 < j < ny_fft) ? 2.0 : 1.0
+        ky_val = ky[j]
+        
+        for i in 1:nx_fft
+            kx_val = kx[i]
+            kperp = sqrt(kx_val^2 + ky_val^2)
+            
+            bin_idx = floor(Int, kperp / kmin) + 1
+            
+            if 1 <= bin_idx <= nbins
+                energy = abs2(field_fft[i, j]) * nf
+                amp[bin_idx] += energy
+            end
+        end
+    end
+    
+    return k_bins, amp
+end
+
+# =====================================================================
+# 3D Power Spectrum Implementation
+# =====================================================================
+
 
 """
-function power_spectrum(field, box_width; verbose::Bool=false)
+    power_spectrum_3D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; k_norm = 1.0)
 
-    if verbose
-        @info "Fourier transform of grid"
-    end
-    # fourier transform of grid
-    Fk = fftshift(fft(field))
-    if verbose
-        @info "Fourier transform done"
-        @info "Computing powerspectrum"
-    end
-    # reduce from N-dim to 1-dim
-    Pk = flatten_powerspec(ndims(Fk), abs2.(Fk); verbose)
+Computes the 3D power spectrum of the given fields. The fields are expected to be 3D arrays with dimensions (nx, ny, nz).
+The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
+"""
+function power_spectrum_3D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
     
-    if verbose
-        @info "Powerspectrum done"
+    nx, ny, nz = size(field_x)
+    
+    # Calculate frequencies for a 3D grid
+    kx = rfftfreq(nx, cells_per_skindepth)
+    ky = fftfreq(ny, cells_per_skindepth)
+    kz = fftfreq(nz, cells_per_skindepth)
+    
+    # Use the fundamental wavenumber for bin widths
+    kmin = kx[2] 
+    
+    # Perform 3D RFFT (defaults to transforming all 3 dimensions)
+    field_x_fft = rfft(field_x)
+    field_y_fft = rfft(field_y)
+    field_z_fft = rfft(field_z)
+    
+    nx_fft, ny_fft, nz_fft = size(field_x_fft)
+    
+    # Determine maximum k (the furthest corner of the 3D k-space box)
+    kmax = sqrt(kx[end]^2 + maximum(abs, ky)^2 + maximum(abs, kz)^2)
+    k_bins = collect(0:kmin:(kmax - kmin/10))
+    nbins = length(k_bins)
+    
+    amp = zeros(nbins)
+    
+    # Precompute whether nx is even for the reality condition
+    nx_is_even = (nx % 2 == 0)
+    
+    # Single-pass loop fusion for 3D spherical shells
+    # Loop order corresponds to memory layout: innermost loop processes the 1st dimension.
+    @inbounds for k in 1:nz_fft
+        kz_val = kz[k]
+        
+        for j in 1:ny_fft
+            ky_val = ky[j]
+            
+            for i in 1:nx_fft
+                kx_val = kx[i]
+                
+                # 3D Wavenumber magnitude
+                k_mag = sqrt(kx_val^2 + ky_val^2 + kz_val^2)
+                
+                # Compute bin index mathematically
+                bin_idx = floor(Int, k_mag / kmin) + 1
+                
+                if 1 <= bin_idx <= nbins
+                    # Reality condition for rfft over the FIRST dimension:
+                    # DC (i=1) and Nyquist (if nx is even and i=nx_fft) are unique.
+                    # All other modes represent two conjugate frequencies, so we double their energy.
+                    nf = (i == 1 || (nx_is_even && i == nx_fft)) ? 1.0 : 2.0
+                    
+                    # Calculate energy on the fly
+                    energy = (abs2(field_x_fft[i, j, k]) + 
+                              abs2(field_y_fft[i, j, k]) + 
+                              abs2(field_z_fft[i, j, k])) * nf
+                    
+                    amp[bin_idx] += energy
+                end
+            end
+        end
     end
-    # construct modes on grid
-    N = size(Fk, 1)
-    i_max = N ÷ 2
-    k = [i/box_width for i = 0:i_max]
+    
+    return k_bins, amp
+end
 
-    return k, Pk
+
+"""
+    power_spectrum_3D(field::AbstractArray; cells_per_skindepth = 1.0)
+Computes the 3D power spectrum of a single scalar field. 
+The field is expected to be a 3D array with dimensions (nx, ny, nz). 
+The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
+"""
+function power_spectrum_3D(field::AbstractArray; cells_per_skindepth = 1.0)
+    nx, ny, nz = size(field)
+    
+    # Frequencies: Default 3D rfft() halves the FIRST dimension (nx)
+    kx = rfftfreq(nx, cells_per_skindepth)
+    ky = fftfreq(ny, cells_per_skindepth)
+    kz = fftfreq(nz, cells_per_skindepth)
+    kmin = kx[2] 
+    
+    # 3D RFFT
+    field_fft = rfft(field)
+    nx_fft, ny_fft, nz_fft = size(field_fft)
+    
+    # Setup bins
+    kmax = sqrt(kx[end]^2 + maximum(abs, ky)^2 + maximum(abs, kz)^2)
+    k_bins = collect(0:kmin:(kmax - kmin/10))
+    nbins = length(k_bins)
+    
+    amp = zeros(nbins)
+    nx_is_even = (nx % 2 == 0)
+    
+    # Single-pass loop fusion (Column-major iteration)
+    @inbounds for k in 1:nz_fft
+        kz_val = kz[k]
+        for j in 1:ny_fft
+            ky_val = ky[j]
+            for i in 1:nx_fft
+                kx_val = kx[i]
+                
+                k_mag = sqrt(kx_val^2 + ky_val^2 + kz_val^2)
+                bin_idx = floor(Int, k_mag / kmin) + 1
+                
+                if 1 <= bin_idx <= nbins
+                    # Reality condition for rfft over the FIRST dimension
+                    nf = (i == 1 || (nx_is_even && i == nx_fft)) ? 1.0 : 2.0
+                    
+                    energy = abs2(field_fft[i, j, k]) * nf
+                    amp[bin_idx] += energy
+                end
+            end
+        end
+    end
+    
+    return k_bins, amp
 end
