@@ -18,17 +18,25 @@ function read_fields_reduced(run_info::EntityData, field_names::Vector{String};
         data[field_name] = Vector{Float64}(undef, length(i))
     end 
 
+    if verbose
+        P = Progress(length(i); desc="Reading and reducing fields:")
+    end
+
     # loop over files
     for (j, _step) in enumerate(i)
         # read the data of the current timestep
         step_data = read_field(run_info, field_names; 
                     i_step=run_info.steps[_step],
                     slice=slice,
-                    verbose=verbose)
+                    verbose=false)
 
         # reduce the fields
         for field_name in field_names
             data[field_name][j] = reduction_function(step_data[field_name])
+        end
+
+        if verbose
+            next!(P)
         end
     end
 

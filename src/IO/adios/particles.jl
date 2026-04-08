@@ -22,11 +22,13 @@ function read_particles_reduced(run_info::EntityData, species::Integer,
         data[prop] = Vector{Float64}(undef, length(i))
     end 
 
+    if verbose
+        P = Progress(length(i); desc="Reading and reducing particles:")
+    end
+
     # loop over files
     for (j, _step) in enumerate(i)
-        if verbose
-            @info "reading step $(run_info.steps[_step])..."
-        end
+
         # read the data of the current timestep
         step_data = read_particles(run_info, species, properties; 
                     i_step=run_info.steps[_step],
@@ -37,6 +39,10 @@ function read_particles_reduced(run_info::EntityData, species::Integer,
         for prop in properties
             data[prop][j] = reduction_function(step_data[prop])
         end    # remember to close the file
+
+        if verbose
+            next!(P)
+        end
     end
 
     return data

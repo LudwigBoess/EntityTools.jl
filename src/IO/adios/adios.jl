@@ -92,6 +92,39 @@ function read_times(sim_path, subfolder, read_steps=false)
 end
 
 """
+    construct_times(sim_path, subfolder, read_steps=false)
+
+Finds all available output times for a given `subfolder`.
+If `read_steps=true` is set it also returns an array of the output steps constructed from file names.
+"""
+function construct_times(sim_path, subfolder, read_steps=false)
+    # find all available files in the folder
+    files = readdir(joinpath(sim_path, subfolder))
+    Nfiles = length(files)
+    # read written steps
+    i_steps = Vector{Int64}(undef, Nfiles)
+    for i in 1:Nfiles 
+        i_steps[i] = parse(Int64, split(files[i], ".")[2])
+    end
+
+    # read run settings to get timestep
+    runsettings = read_run_settings(sim_path, subfolder)
+    dt = runsettings["algorithms.timestep.dt"]
+
+    # read times
+    times = Vector{Float64}(undef, Nfiles)
+    for i = 1:Nfiles
+        times[i] = i_steps[i] * dt
+    end
+
+    if read_steps
+        return times, i_steps
+    else
+        return times
+    end
+end
+
+"""
     find_closest_time(run_info::EntityData, t::Real)
 
 Finds the time in the available outputs that is closest to the requested one
@@ -269,18 +302,28 @@ function read_run_settings(sim_path, subfolder)
 end
 
 """
-    EntityData(sim_path::String)
+    EntityData(sim_path::String; verbose=false)
 
 Reads an overview of the simulation into an `EntityData` struct.
 """
-function EntityData(sim_path::String)
+function EntityData(sim_path::String; verbose=false)
 
     if !isdir(sim_path)
         error("$sim_path not present!")
     end
 
     # check which output folders are present
-    subfolders = readdir(sim_path)
+    if verbose
+        @info "Checking for output folders in $sim_path"
+    end
+    all_files = readdir(sim_path)
+
+    # filter out only the directories
+    if verbose
+        @info "Filtering subfolders"
+    end
+    subfolders = filter(entry -> isdir(joinpath(sim_path, entry)), all_files)
+
     # make sure to not try to read a plots folder
     filter!(x -> x != "Plots", subfolders)
     filter!(x -> x != "plots", subfolders)
@@ -291,7 +334,10 @@ function EntityData(sim_path::String)
     end
 
     # reading output files and times
-    times, i_steps = read_times(sim_path, subfolders[1], true)
+    if verbose
+        @info "Reading output times and steps"
+    end
+    times, i_steps = construct_times(sim_path, subfolders[1], true)
 
     # if fields are written, read their info
     field_info = nothing
@@ -312,6 +358,9 @@ function EntityData(sim_path::String)
     end
 
     # read the settings of the simulation
+    if verbose
+        @info "Reading run settings"
+    end
     runsettings = read_run_settings(sim_path, subfolders[1])
 
     # construct an EntityData struct
