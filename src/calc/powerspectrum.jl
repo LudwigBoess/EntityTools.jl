@@ -7,11 +7,12 @@ Computes the power spectrum of the given fields.
 The fields are expected to be 3D arrays with dimensions (nx, ny, nz) or 2D arrays with dimensions (nx, ny). 
 The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
 """
-function power_spectrum(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
+function power_spectrum(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; 
+                        cells_per_skindepth = 1.0, verbose::Bool = false)
     if ndims(field_x) == 2
-        return power_spectrum_2D(field_x, field_y, field_z; cells_per_skindepth)
+        return power_spectrum_2D(field_x, field_y, field_z; cells_per_skindepth, verbose)
     elseif ndims(field_x) == 3
-        return power_spectrum_3D(field_x, field_y, field_z; k_norm = cells_per_skindepth)
+        return power_spectrum_3D(field_x, field_y, field_z; cells_per_skindepth, verbose)
     else
         error("Unsupported number of dimensions: $(ndims(field_x)). Only 2D and 3D arrays are supported.")
     end 
@@ -25,11 +26,11 @@ The field is expected to be a 3D array with dimensions (nx, ny, nz)
 or a 2D array with dimensions (nx, ny). 
 The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
 """
-function power_spectrum(field::AbstractArray; cells_per_skindepth = 1.0)
+function power_spectrum(field::AbstractArray; cells_per_skindepth = 1.0, verbose::Bool = false)
     if ndims(field) == 2
-        return power_spectrum_2D(field; cells_per_skindepth = cells_per_skindepth)
+        return power_spectrum_2D(field; cells_per_skindepth, verbose)
     elseif ndims(field) == 3
-        return power_spectrum_3D(field; cells_per_skindepth = cells_per_skindepth)
+        return power_spectrum_3D(field; cells_per_skindepth, verbose)
     else
         error("Unsupported number of dimensions: $(ndims(field)). Only 2D and 3D arrays are supported.")
     end 
@@ -46,14 +47,20 @@ end
 Computes the 2D power spectrum of the given fields. The fields are expected to be 3D arrays with dimensions (nx, ny, nz) or 2D arrays with dimensions (nx, ny). 
 The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
 """
-function power_spectrum_2D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
+function power_spectrum_2D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; 
+                            cells_per_skindepth::Real = 1.0, verbose::Bool = false)
     nx, ny = size(field_x, 1), size(field_x, 2)
 
+    verbose && @info "Calculating 2D power spectrum with dimensions: ($nx, $ny)"
+
+    verbose && @info "Calculating frequencies for 2D grid..."
     # Calculate frequencies
     kx = fftfreq(nx, cells_per_skindepth)
     ky = rfftfreq(ny, cells_per_skindepth)
     kmin = ky[2] 
     
+
+    verbose && @info "Performing 2D RFFT on fields..."
     # Perform 2D real fourier transform 
     # (halves the second dimension as specified by the tuple (2,1))
     field_x_fft = rfft(field_x, (2, 1))
@@ -68,6 +75,8 @@ function power_spectrum_2D(field_x::AbstractArray, field_y::AbstractArray, field
     nbins = length(k_bins)
     
     amp = zeros(nbins)
+
+    P = Progress(ny_fft, desc="Binning Fourier modes...")
     
     # Loop over Fourier modes and bin by kperp
     for j in 1:ny_fft
@@ -91,6 +100,8 @@ function power_spectrum_2D(field_x::AbstractArray, field_y::AbstractArray, field
                 amp[bin_idx] += energy
             end
         end
+
+        verbose && next!(P)
     end
 
     return k_bins, amp
@@ -100,15 +111,19 @@ end
     power_spectrum_2D(field::AbstractArray; cells_per_skindepth = 1.0)
 Computes the 2D power spectrum of a single scalar field. The field is expected to be a 2D array with dimensions (nx, ny). The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
 """
-function power_spectrum_2D(field::AbstractArray; cells_per_skindepth = 1.0)
+function power_spectrum_2D(field::AbstractArray; cells_per_skindepth::Real = 1.0, verbose::Bool = false)
     nx, ny = size(field)
     
+    verbose && @info "Calculating 2D power spectrum with dimensions: ($nx, $ny)"
+        
+    verbose && @info "Calculating frequencies for 2D grid..."
     # Frequencies: rfft halves the dimension listed first in the region tuple.
     # Below, rfft(field, (2, 1)) will halve dimension 2 (ny).
     kx = fftfreq(nx, cells_per_skindepth)
     ky = rfftfreq(ny, cells_per_skindepth)
     kmin = ky[2] 
     
+    verbose && @info "Performing 2D RFFT on field..."
     # 2D RFFT 
     field_fft = rfft(field, (2, 1))
     nx_fft, ny_fft = size(field_fft)
@@ -119,7 +134,9 @@ function power_spectrum_2D(field::AbstractArray; cells_per_skindepth = 1.0)
     nbins = length(k_bins)
     
     amp = zeros(nbins)
-    
+
+    P = Progress(ny_fft, desc="Binning Fourier modes...")
+
     # Single-pass loop fusion (Column-major iteration)
     @inbounds for j in 1:ny_fft
         # Reality condition: double energy for internal frequencies
@@ -137,6 +154,8 @@ function power_spectrum_2D(field::AbstractArray; cells_per_skindepth = 1.0)
                 amp[bin_idx] += energy
             end
         end
+
+        verbose && next!(P)
     end
     
     return k_bins, amp
@@ -153,10 +172,13 @@ end
 Computes the 3D power spectrum of the given fields. The fields are expected to be 3D arrays with dimensions (nx, ny, nz).
 The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
 """
-function power_spectrum_3D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; cells_per_skindepth = 1.0)
+function power_spectrum_3D(field_x::AbstractArray, field_y::AbstractArray, field_z::AbstractArray; 
+                            cells_per_skindepth::Real = 1.0, verbose::Bool = false)
     
     nx, ny, nz = size(field_x)
+    verbose && @info "Calculating 3D power spectrum with dimensions: ($nx, $ny, $nz)"
     
+    verbose && @info "Calculating frequencies for 3D grid..."
     # Calculate frequencies for a 3D grid
     kx = rfftfreq(nx, cells_per_skindepth)
     ky = fftfreq(ny, cells_per_skindepth)
@@ -165,6 +187,7 @@ function power_spectrum_3D(field_x::AbstractArray, field_y::AbstractArray, field
     # Use the fundamental wavenumber for bin widths
     kmin = kx[2] 
     
+    verbose && @info "Performing 3D RFFT on fields..."
     # Perform 3D RFFT (defaults to transforming all 3 dimensions)
     field_x_fft = rfft(field_x)
     field_y_fft = rfft(field_y)
@@ -181,6 +204,8 @@ function power_spectrum_3D(field_x::AbstractArray, field_y::AbstractArray, field
     
     # Precompute whether nx is even for the reality condition
     nx_is_even = (nx % 2 == 0)
+
+    P = Progress(nz_fft, desc="Binning Fourier modes...")
     
     # Single-pass loop fusion for 3D spherical shells
     # Loop order corresponds to memory layout: innermost loop processes the 1st dimension.
@@ -214,6 +239,8 @@ function power_spectrum_3D(field_x::AbstractArray, field_y::AbstractArray, field
                 end
             end
         end
+
+        verbose && next!(P)
     end
     
     return k_bins, amp
@@ -226,15 +253,19 @@ Computes the 3D power spectrum of a single scalar field.
 The field is expected to be a 3D array with dimensions (nx, ny, nz). 
 The `cells_per_skindepth` parameter is used to scale the frequencies appropriately.
 """
-function power_spectrum_3D(field::AbstractArray; cells_per_skindepth = 1.0)
+function power_spectrum_3D(field::AbstractArray; cells_per_skindepth::Real = 1.0, verbose::Bool = false)
     nx, ny, nz = size(field)
+
+    verbose && @info "Calculating 3D power spectrum with dimensions: ($nx, $ny, $nz)"
     
+    verbose && @info "Calculating frequencies for 3D grid..."
     # Frequencies: Default 3D rfft() halves the FIRST dimension (nx)
     kx = rfftfreq(nx, cells_per_skindepth)
     ky = fftfreq(ny, cells_per_skindepth)
     kz = fftfreq(nz, cells_per_skindepth)
     kmin = kx[2] 
     
+    verbose && @info "Performing 3D RFFT on field..."
     # 3D RFFT
     field_fft = rfft(field)
     nx_fft, ny_fft, nz_fft = size(field_fft)
@@ -247,6 +278,7 @@ function power_spectrum_3D(field::AbstractArray; cells_per_skindepth = 1.0)
     amp = zeros(nbins)
     nx_is_even = (nx % 2 == 0)
     
+    P = Progress(nz_fft, desc="Binning Fourier modes...")
     # Single-pass loop fusion (Column-major iteration)
     @inbounds for k in 1:nz_fft
         kz_val = kz[k]
@@ -267,6 +299,7 @@ function power_spectrum_3D(field::AbstractArray; cells_per_skindepth = 1.0)
                 end
             end
         end
+        verbose && next!(P)
     end
     
     return k_bins, amp
