@@ -12,6 +12,10 @@ module EntityTools
     using TOML
     using FFTW
     using WriteVTK 
+    using Interpolations
+    using LinearAlgebra
+    using Makie
+    using GeometryBasics
 
     include("IO/adios/adios.jl")
     include("IO/adios/fields.jl")
@@ -29,6 +33,7 @@ module EntityTools
     include("units/time.jl")
     include("units/Bfield.jl")
     include("units/temperature.jl")
+    include("plotting/polar.jl")
 
     export phase_map,
             spectrum,
@@ -42,5 +47,8 @@ module EntityTools
             bp_to_vtk,
             power_spectrum,
             get_Temp,
+            polar_fieldlines!,
+            polar_pcolor!,
+            polar_contour!
 
 end
