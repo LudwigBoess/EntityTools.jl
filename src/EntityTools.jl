@@ -38,6 +38,8 @@ module EntityTools
     include("units/time.jl")
     include("units/Bfield.jl")
     include("units/temperature.jl")
+    include("units/plasma.jl")
+    include("setup/shock.jl")
     include("plotting/polar.jl")
 
     export phase_map,
@@ -67,6 +69,12 @@ module EntityTools
             bp_to_vtk,
             power_spectrum,
             get_Temp,
+            omega_pe,
+            omega_ce,
+            v_th,
+            rho_e,
+            betae,
+            q_free,
             polar_fieldlines!,
             polar_pcolor!,
             polar_contour!,
@@ -74,6 +82,7 @@ module EntityTools
             field_snapshot_size,
             field_components,
             particle_snapshot_size,
-            cells_with_ghosts
+            cells_with_ghosts,
+            write_shock_setup
 
 end
