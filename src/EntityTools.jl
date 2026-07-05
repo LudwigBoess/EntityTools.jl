@@ -24,6 +24,7 @@ module EntityTools
     include("IO/adios/particles.jl")
     include("IO/adios/spectra.jl")
     include("IO/adios/performance.jl")
+    include("IO/adios/disk_space.jl")
     include("IO/vtk/write_vtk.jl")
     include("IO/parse_output.jl")
     include("calc/phase.jl")
@@ -68,6 +69,11 @@ module EntityTools
             get_Temp,
             polar_fieldlines!,
             polar_pcolor!,
-            polar_contour!
+            polar_contour!,
+            checkpoint_size,
+            field_snapshot_size,
+            field_components,
+            particle_snapshot_size,
+            cells_with_ghosts
 
 end
