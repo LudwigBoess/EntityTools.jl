@@ -94,6 +94,12 @@ defaults.
 - `render_width = 2048`       : frame width in px (height follows the window aspect).
 - `render_window_di = 100.0`  : x-window width in ion inertial lengths d_i.
 - `render_shock_frac = 1/3`   : fractional position the shock front is held at.
+- `render_view_azimuth = -55`, `render_view_elevation = 11.6` : (3D only) eye
+      direction [deg] for the fixed 3/4 orthographic view; the box orientation in the
+      frame is then independent of box size. `render_fill = 0.95` sets how much of the
+      frame the region fills. In 3D the frame height and `[output.render.camera]`
+      (position / look_at / up / ortho_height) are computed from the box geometry;
+      preview with `entity/render_preview.py <toml>`.
   `camera_velocity` is prefilled with v_sh = Δv/(compression_ratio-1) (= [c] since
   Entity c=1) and `camera_start_time` with frac·window/v_sh. Both assume the hydro
   compression ratio, so they are ESTIMATES — measure the true front speed with
@@ -142,6 +148,10 @@ function write_shock_setup(path::AbstractString;
         render_width::Integer     = 2048,
         render_window_di::Real    = 100.0,
         render_shock_frac::Real   = 1 / 3,
+        # --- 3D orthographic camera (dim == 3 only) ---
+        render_view_azimuth::Real   = -55.0,   # eye azimuth in the xy-plane [deg] (0 → +x, 90 → +y)
+        render_view_elevation::Real = 11.6,    # eye elevation above the xy-plane [deg]
+        render_fill::Real           = 0.95,    # region fills this fraction of the frame
         verbose::Bool             = true,
     )
 
@@ -245,8 +255,25 @@ function write_shock_setup(path::AbstractString;
     Wx_render       = min(round(render_window_di * d_i / dx) * dx, extent[1][2])
     cam_t0          = render_shock_frac * Wx_render / cam_vel
     render_interval = t_run / n_render_outputs
-    Ly_span         = dim ≥ 2 ? (extent[2][2] - extent[2][1]) : Wx_render
-    render_height   = clamp(round(Int, render_width * Ly_span / Wx_render), 100, render_width)
+
+    # Frame height + (3D only) orthographic 3/4 camera. In 3D the height is set to the
+    # projected aspect of the region so it wraps the box; the camera direction/up are
+    # fixed (independent of box size) so the box orientation in the frame is invariant.
+    cam3d = nothing
+    if dim == 3
+        region3 = ((0.0, Wx_render), (extent[2][1], extent[2][2]), (extent[3][1], extent[3][2]))
+        u_eye, right, upc, center, diag, Δr, Δu =
+            _cam3d_basis(region3, render_view_azimuth, render_view_elevation, (0.0, 0.0, 1.0))
+        render_height = clamp(round(Int, render_width * Δu / Δr), 100, 4 * render_width)
+        aspect        = render_width / render_height
+        ortho_height  = 2 * max(0.5 * Δu / render_fill, 0.5 * Δr / (render_fill * aspect))
+        D             = 2 * diag                       # eye a safe distance out (ortho: distance is cosmetic)
+        cam3d = (; position = ntuple(d -> center[d] + D * u_eye[d], 3),
+                   look_at = center, up = (0.0, 0.0, 1.0), ortho_height)
+    else
+        Ly_span       = dim ≥ 2 ? (extent[2][2] - extent[2][1]) : Wx_render
+        render_height = clamp(round(Int, render_width * Ly_span / Wx_render), 100, render_width)
+    end
 
     # ----------------------------- diagnostics ----------------------------
     derived = (; pgen, dim,
@@ -267,7 +294,7 @@ function write_shock_setup(path::AbstractString;
         lambda_De = sqrt(T) * d0,
         resolution, extent, ncells, maxnpart,
         v_sh = v_sh_box, cam_vel, cam_t0, Wx_render,
-        render_interval, render_width, render_height, n_render_outputs,
+        render_interval, render_width, render_height, n_render_outputs, cam3d,
     )
 
     # ------------------------------ write toml -----------------------------
@@ -278,7 +305,8 @@ function write_shock_setup(path::AbstractString;
             T, temperature_ratio, Bmag, Btheta, Bphi, Δv,
             t_run, n_outputs, injection_frequency,
             thermal_bath_offset, thermal_bath_width, derived,
-            render, render_shock_frac)))
+            render, render_shock_frac, render_fill,
+            render_view_azimuth, render_view_elevation)))
     end
 
     verbose && _print_shock_summary(path, derived; runtime, max_ratio, rL,
@@ -305,6 +333,42 @@ function _rh_piston(M0, γ)
     a =  (γ - 1) * M0^2 + 2
     b = -((γ + 1) * M0^2 + 4)
     (-b + sqrt(max(b^2 - 8a, 0.0))) / (2a)      # 4·a·c with c = 2  ⇒  8a
+end
+
+# --- 3D orthographic camera geometry (mirrors entity renderer.cpp / composite.h) ---
+_cross(a, b) = (a[2] * b[3] - a[3] * b[2],
+                a[3] * b[1] - a[1] * b[3],
+                a[1] * b[2] - a[2] * b[1])
+_unit(a) = (n = sqrt(a[1]^2 + a[2]^2 + a[3]^2); n > 1e-30 ? (a[1] / n, a[2] / n, a[3] / n) : a)
+
+# projected spread (max − min) of a box's 8 corners along a screen axis
+function _corner_spread(region, axis)
+    lo, hi = Inf, -Inf
+    for m in 0:7
+        p = (iszero(m & 1) ? region[1][1] : region[1][2]) * axis[1] +
+            (iszero(m & 2) ? region[2][1] : region[2][2]) * axis[2] +
+            (iszero(m & 4) ? region[3][1] : region[3][2]) * axis[3]
+        lo = min(lo, p); hi = max(hi, p)
+    end
+    hi - lo
+end
+
+# Build the orthographic camera basis for a 3D box `region` ((lo,hi) per axis) viewed
+# from eye azimuth/elevation (deg, in the xy-plane / above it) with world-up `up`.
+# Returns the eye-offset unit vector (look_at → eye), the screen right/up axes, the
+# region center, its diagonal, and the projected corner spreads Δright/Δup. Because
+# the projection is orthographic these depend only on the view *direction*, not the
+# eye distance — so a fixed (az, el) reproduces the same box orientation at any size.
+function _cam3d_basis(region, az_deg, el_deg, up)
+    az, el = deg2rad(az_deg), deg2rad(el_deg)
+    u_eye  = (cos(el) * cos(az), cos(el) * sin(az), sin(el))   # look_at → eye (unit)
+    fwd    = (-u_eye[1], -u_eye[2], -u_eye[3])
+    right  = _unit(_cross(fwd, up))
+    upc    = _cross(right, fwd)                                # camera up (unit)
+    center = ntuple(d -> 0.5 * (region[d][1] + region[d][2]), 3)
+    diag   = sqrt(sum(ntuple(d -> (region[d][2] - region[d][1])^2, 3)))
+    return u_eye, right, upc, center, diag,
+           _corner_spread(region, right), _corner_spread(region, upc)
 end
 
 # format a real as a TOML float (always carries a '.' or exponent)
@@ -340,14 +404,31 @@ function _shock_toml(c)
         ""
     else
         pct  = round(Int, 100 * c.render_shock_frac)
+        fpct = round(Int, 100 * c.render_fill)
         Nmax = round(1.5 * d.compression_ratio, digits = 1)   # density jumps to ~r behind the front
+        hcom = d.cam3d === nothing ? "~matches window aspect (x1 window : transverse extent)" :
+                                     "matches the projected 3D box aspect"
+        # 3D gets a fixed 3/4 orthographic camera; 2D uses the default slice window.
+        camera = d.cam3d === nothing ? "" : """
+
+    [output.render.camera]
+      orthographic = true
+      # Fixed 3/4 view (eye az=$(_ftoml(c.render_view_azimuth))°, el=$(_ftoml(c.render_view_elevation))°, up=+z): +x reads across the frame and the
+      # box orientation is identical for any box size. look_at = region centre; ortho_height
+      # fits the x1_lim region to ~$(fpct)% of the frame (aspect-aware). Preview: entity/render_preview.py.
+      position     = $(_fvec(d.cam3d.position))
+      look_at      = $(_fvec(d.cam3d.look_at))
+      up           = $(_fvec(d.cam3d.up))
+      ortho_height = $(_ftoml(d.cam3d.ortho_height))
+      fov          = 15.0         # vertical FOV [deg] (perspective only)
+"""
         """
 
   [output.render]
     enable            = true
     interval_time     = $(_ftoml(d.render_interval))   # $(d.n_render_outputs) frames over the run
     width             = $(d.render_width)
-    height            = $(d.render_height)              # ~matches window aspect (x1 window : transverse extent)
+    height            = $(d.render_height)              # $hcom
     x1_lim            = [0.0, $(_ftoml(d.Wx_render))]  # window at the wall (wall + forming shock)
     axes              = true
     time_label        = true
@@ -357,7 +438,7 @@ function _shock_toml(c)
     # Refine by running PIC/Paper/shock_3D/scripts/shock_speed.jl on the field output.
     camera_velocity   = [$(_ftoml(d.cam_vel)), 0.0]
     camera_start_time = $(_ftoml(d.cam_t0))            # front reaches ~$(pct)% of the window here (t = frac·W/v_sh)
-
+$camera
     [[output.render.scenes]]
       field    = "N"
       min      = 0.0
@@ -530,6 +611,10 @@ function _print_shock_summary(path, d; runtime, max_ratio, rL, cells_per_skindep
     @printf("│   v_sh ≈ %.4g c = camera_velocity   window x1_lim = [0, %.4g]   camera_start_time = %.4g (%.3g Ω_ci⁻¹)\n",
             d.cam_vel, d.Wx_render, d.cam_t0, d.cam_t0 / d.Omega_ci_inv)
     @printf("│   %d frames  %dx%d px\n", d.n_render_outputs, d.render_width, d.render_height)
+    if d.cam3d !== nothing
+        @printf("│   3D ortho camera: look_at=%s  ortho_height=%.4g  (fixed 3/4 view; preview: entity/render_preview.py)\n",
+                string(round.(d.cam3d.look_at; digits = 1)), d.cam3d.ortho_height)
+    end
     println("└─")
     return nothing
 end
