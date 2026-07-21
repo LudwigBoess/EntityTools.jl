@@ -136,8 +136,8 @@ function write_shock_setup(path::AbstractString;
         name::AbstractString      = "_shock",
         n_outputs::Integer        = 100,
         decomposition             = nothing,
-        match_ds::Real            = 1.0,
-        maxnpart_safety::Real     = 1.5,
+        match_ds::Real            = -1.0,
+        maxnpart::Real            = 3.0e8,
         # --- downstream-only knobs ---
         injection_frequency::Integer = 100,
         thermal_bath_offset::Real    = 20.0,
@@ -241,7 +241,11 @@ function write_shock_setup(path::AbstractString;
 
     # ---------------------------- particle budget -------------------------
     ncells   = prod(resolution)
-    maxnpart = ceil(Int, maxnpart_safety * (ppc0 / 2) * ncells)  # per species
+
+    # -------------------------- boundary conditions -----------------------
+    if ds == -1.0
+        ds = pgen === :downstream ? thermal_bath_offset + thermal_bath_width : 1.0
+    end
 
     # ------------------------ render window / panning camera --------------
     # The shock recedes at v_sh = Δv/(r-1), the same speed used to size the box.
@@ -406,6 +410,11 @@ function _shock_toml(c)
         pct  = round(Int, 100 * c.render_shock_frac)
         fpct = round(Int, 100 * c.render_fill)
         Nmax = round(1.5 * d.compression_ratio, digits = 1)   # density jumps to ~r behind the front
+        # 3D renders composite the field volumetrically, so each scene needs an opacity
+        # ramp: transparent at the scene's colorbar min, fully opaque at its max. 2D slice
+        # renders ignore alpha, so only emit it for the 3D orthographic camera.
+        _alpha3d(mn, mx) = d.cam3d === nothing ? "" :
+            "\n      alpha    = [[$(_ftoml(mn)), 0.0], [$(_ftoml(mx)), 1.0]]"
         hcom = d.cam3d === nothing ? "~matches window aspect (x1 window : transverse extent)" :
                                      "matches the projected 3D box aspect"
         # 3D gets a fixed 3/4 orthographic camera; 2D uses the default slice window.
@@ -443,7 +452,7 @@ $camera
       field    = "N"
       min      = 0.0
       max      = $(_ftoml(Nmax))
-      colormap = "viridis"
+      colormap = "viridis"$(_alpha3d(0.0, Nmax))
 
     [[output.render.scenes]]
       field    = "Bmag"
@@ -451,7 +460,7 @@ $camera
       min      = 0.0
       max      = $(_ftoml(Nmax))                       # oblique field compresses ~like density; tune per run
       log      = false
-      colormap = "dusk"
+      colormap = "dusk"$(_alpha3d(0.0, Nmax))
 
     [[output.render.scenes]]
       field    = "T22"
@@ -459,7 +468,7 @@ $camera
       min      = 0.01
       max      = 5.0                                    # tune per run
       log      = true
-      colormap = "sunburst"
+      colormap = "sunburst"$(_alpha3d(0.01, 5.0))
 """
     end
 
