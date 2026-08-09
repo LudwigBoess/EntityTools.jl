@@ -243,8 +243,8 @@ function write_shock_setup(path::AbstractString;
     ncells   = prod(resolution)
 
     # -------------------------- boundary conditions -----------------------
-    if ds == -1.0
-        ds = pgen === :downstream ? thermal_bath_offset + thermal_bath_width : 1.0
+    if match_ds == -1.0
+        match_ds = pgen === :downstream ? thermal_bath_offset + thermal_bath_width : 1.0
     end
 
     # ------------------------ render window / panning camera --------------
