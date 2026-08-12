@@ -61,6 +61,17 @@ end
 
 
 """
+    output_files(sim_path, subfolder)
+
+All ADIOS2 output entries `<subfolder>.<step>.bp` of an output folder, sorted by name.
+Anything else in the folder (logs, images, leftovers) is ignored.
+"""
+function output_files(sim_path, subfolder)
+    entries = readdir(joinpath(sim_path, subfolder))
+    return sort(filter(f -> startswith(f, "$subfolder.") && endswith(f, ".bp"), entries))
+end
+
+"""
     read_times(sim_path, subfolder, read_steps=false)
 
 Finds all available output times for a given `subfolder`.
@@ -68,7 +79,7 @@ If `read_steps=true` is set it also returns an array of the output steps constru
 """
 function read_times(sim_path, subfolder, read_steps=false)
     # find all available files in the folder
-    files = readdir(joinpath(sim_path, subfolder))
+    files = output_files(sim_path, subfolder)
     Nfiles = length(files)
     # read written steps
     i_steps = Vector{Int64}(undef, Nfiles)
@@ -99,7 +110,7 @@ If `read_steps=true` is set it also returns an array of the output steps constru
 """
 function construct_times(sim_path, subfolder, read_steps=false)
     # find all available files in the folder
-    files = readdir(joinpath(sim_path, subfolder))
+    files = output_files(sim_path, subfolder)
     Nfiles = length(files)
     # read written steps
     i_steps = Vector{Int64}(undef, Nfiles)
@@ -202,9 +213,9 @@ Selects the first available file in a `subfolder` or throws an error
 function select_first_file(sim_path, subfolder)
 
     # check if there are files present
-    folder_files = readdir(joinpath(sim_path, subfolder))
+    folder_files = output_files(sim_path, subfolder)
     if isempty(folder_files)
-        error("No files present in $(subfolder)!")
+        error("No output files present in $(joinpath(sim_path, subfolder))!")
     end
     # open first available file
     file = adios_open_serial(joinpath(sim_path, subfolder, folder_files[1]), mode_readRandomAccess)
@@ -322,16 +333,18 @@ function EntityData(sim_path::String; verbose=false)
     if verbose
         @info "Filtering subfolders"
     end
-    subfolders = filter(entry -> isdir(joinpath(sim_path, entry)), all_files)
-
-    # make sure to not try to read a plots folder
-    filter!(x -> x != "Plots", subfolders)
-    filter!(x -> x != "plots", subfolders)
+    # only keep folders that actually hold `<folder>.<step>.bp` output, so plot
+    # folders, log folders and checkpoint folders are skipped whatever their name
+    subfolders = filter(entry -> isdir(joinpath(sim_path, entry)) &&
+                                 !isempty(output_files(sim_path, entry)), all_files)
 
     # check if any folders are present
     if iszero(length(subfolders))
         error("No output subfolders found in $sim_path")
     end
+
+    # take times and settings from the fields output when it is available
+    "fields" in subfolders && (subfolders = ["fields"; filter(!isequal("fields"), subfolders)])
 
     # reading output files and times
     if verbose
