@@ -7,36 +7,63 @@
 #  numbers (mass ratio, temperature, sonic Mach number, plasma beta, runtime in
 #  ion cyclotron times) come out correctly.
 #
-#  Two problem generators are supported via the `pgen` keyword:
+#  Three problem generators are supported via the `pgen` keyword:
 #
-#    :downstream  ->  LMBgens/shock_downstream  (key `drift_ux`)
-#                     simulation frame = downstream rest frame; upstream is
-#                     injected from the right and reflects off the left wall,
-#                     the shock propagates to the right in a *fixed* box.
+#    :downstream    ->  LMBgens/shock_downstream    (key `drift_ux`)
+#                       simulation frame = downstream rest frame; upstream is
+#                       injected from the right and reflects off the left wall,
+#                       the shock propagates to the right in a *fixed* box.
 #
-#    :upstream    ->  LMBgens/shock_upstream    (key `piston_velocity`)
-#                     simulation frame = upstream rest frame; a piston pushes
-#                     into plasma at rest and a *moving window* follows it.
+#    :upstream      ->  LMBgens/shock_upstream      (key `piston_velocity`)
+#                       simulation frame = upstream rest frame; a piston pushes
+#                       into plasma at rest and a *moving window* follows it.
 #
-#  In both cases the injection/piston speed equals the velocity jump across the
-#  shock, Δv, and the shock recedes from the box reference frame at Δv/(r-1).
+#    :upstream_fill ->  LMBgens/shock_upstream_fill (adds `fill_fraction`,
+#                       `wall_velocity`) as :upstream, plus the option to fill
+#                       only the left `fill_fraction` of the box at t = 0 and
+#                       close it off with a conducting wall that runs ahead of
+#                       the shock at `wall_velocity`, refilling behind itself.
+#
+#  In all cases the injection/piston speed equals the velocity jump across the
+#  shock, Δv, and the shock recedes from the box reference frame at Δv/(r-1) —
+#  for the moving-window pgens because the window itself tracks the piston at Δv.
 #
 #  --------------------------------------------------------------------------
-#  Unit chain (Entity SRPIC, c = 1, skindepth0 = electron skin depth):
+#  Unit chain (Entity SRPIC, c = 1)
 #
-#    σ0   = (skindepth0/larmor0)^2                 (electron magnetisation)
-#    B0   = 1/larmor0,           Bmag = 1 → B = B0
-#    v_A  = sqrt(σ0/μ)            [c]              (ion Alfvén speed)
-#    c_s  = sqrt(2 γ T / μ)       [c]              (c_s^2 = γ(T_e+T_i)/m_i, T_e=T_i)
-#    Ω_ci^-1 = larmor0 · μ        [code time]      (1/Ω_ci, c=1 → time=length)
-#    d_i  = sqrt(μ)·skindepth0    [code length]    (ion inertial length)
-#    ρ_i  = larmor0·sqrt(T·μ)     [code length]    (thermal ion Larmor radius)
-#    β_i  = 2T/σ0,  β_e = 2T/σ0,  β_total = 4T/σ0   (T_e = T_i)
+#  Entity's [scales] are anchored to a *fiducial* population: number density n0
+#  (ppc0 particles per fiducial cell), mass m0 = 1, charge q0 = 1, field B0:
 #
-#  `temperature` is kB T/(m_e c^2) — the value written to `setup.temperature`,
+#    ω_p0 = 1/skindepth0,   ω_B0 = 1/larmor0 = B0,   σ0 = (skindepth0/larmor0)^2
+#
+#  The plasma actually injected is not at n0. The pgens call
+#  InjectUniformMaxwellians with tot_number_density = 1, and ComputeNumInject
+#  puts ppc0/2 particles of *each* species in a cell, so both the electrons and
+#  the ions sit at n_s = fn·n0 with fn = 1/2. Every density-dependent scale
+#  therefore differs from the fiducial one by a power of fn:
+#
+#    ω_ps^2 = ω_p0^2 · fn · q_s^2/m_s
+#    d_e  = skindepth0/sqrt(fn)      = sqrt(2)·skindepth0   (electron skin depth)
+#    d_i  = sqrt(μ/fn)·skindepth0    = sqrt(2μ)·skindepth0  (ion inertial length)
+#    v_A  = sqrt(σ0/(fn·μ_ρ))   [c]  (μ_ρ = μ for :ion mass density, μ+1 for :total)
+#    β_e  = 2·fn·T_e/σ0,   β_i = 2·fn·T_i/σ0,   β_total = β_e + β_i
+#    λ_De = sqrt(T_e/fn)·skindepth0
+#
+#  Density-free (both P and ρ scale with n, so fn cancels):
+#
+#    c_s  = sqrt(γ(T_e+T_i)/μ_ρ)  [c]
+#    ρ_i  = larmor0·sqrt(T_i·μ)   [code length]  (thermal ion Larmor radius)
+#    Ω_ci^-1 = larmor0·μ          [code time]    (c = 1 → time = length)
+#
+#  Identities locked by test/shock_setup.jl:
+#
+#    v_A = Ω_ci·d_i (for :ion),   d_i/d_e = sqrt(μ),   λ_De/d_e = sqrt(T_e)
+#    ρ_i/d_i = sqrt(β_i/2),       c_s/v_A = sqrt(γ·β_total/2)
+#
+#  `temperature` is kB T_e/(m_e c^2) — the value written to `setup.temperature`,
 #  which the pgen passes to InjectUniformMaxwellians (it divides by the species
-#  mass), so T_e = T_i = temperature·m_e c^2 when temperature_ratio = 1.
-#  (Equivalently kB T/(m_i c^2) = temperature/μ.)
+#  mass), so T_e = temperature·m_e c^2 and T_i = temperature_ratio·T_e.
+#  (Equivalently kB T_e/(m_i c^2) = temperature/μ.)
 #
 #  `mach_sonic` is the *flow* sonic Mach number, M_s = Δv/c_s (so Δv = M_s·c_s).
 #  This matches the reference shock_3D/beta50 toml exactly. The corresponding
@@ -44,6 +71,12 @@
 #  quoted with the shock-frame Mach number instead, scale `mach_sonic` by the
 #  ratio printed there.
 # =============================================================================
+
+# Fraction of the fiducial density n0 carried by each species. The shock pgens
+# inject tot_number_density = 1 and Entity's ComputeNumInject fills a cell with
+# ppc0·nd/2 particles per species, so n_e = n_i = n0/2. Changing this requires
+# changing the injection call in the pgen.
+const FN_PER_SPECIES = 0.5
 
 """
     write_shock_setup(path; mass_ratio, temperature, mach_sonic, beta, runtime, kwargs...)
@@ -53,7 +86,7 @@ Generate an Entity (full-PIC / SRPIC) collisionless-shock parameter file at
 
 # Required (keyword) arguments
 - `mass_ratio`  : ion/electron mass ratio μ = m_i/m_e.
-- `temperature` : kB T / (m_e c²) (electron-rest-mass units); T_e = T_i.
+- `temperature` : kB T_e / (m_e c²) (electron-rest-mass units); T_i = `temperature_ratio`·T_e.
 - `mach_sonic`  : flow sonic Mach number M_s = Δv/c_s.
 - `beta`        : plasma beta (see `beta_definition`).
 - `runtime`     : total run time in ion cyclotron times Ω_ci⁻¹.
@@ -64,12 +97,23 @@ Generate an Entity (full-PIC / SRPIC) collisionless-shock parameter file at
                               `runtime` (sizes the x-extent).
 - `rL = 8.0`                : transverse box size in thermal ion Larmor radii
                               ρ_i (used for dim ≥ 2; both transverse dims).
-- `cells_per_skindepth = 4` : cells per electron skin depth (sets dx).
+- `cells_per_skindepth = 4` : cells per `skindepth0`, i.e. dx = skindepth0/this.
+                              `skindepth0` is Entity's *fiducial* skin depth (the
+                              one it prints as `[N dx0]`), not the electron skin
+                              depth: with the ppc0/2-per-species split the true
+                              d_e = √2·skindepth0, so 4 here is 5.66 cells per d_e.
+                              The summary reports both.
 - `pow2 = true`             : round each resolution up to the next power of two.
 
 # Problem generator / conventions
-- `pgen = :downstream`        : `:downstream` (drift_ux) or `:upstream` (piston_velocity).
+- `pgen = :downstream`        : `:downstream` (drift_ux), `:upstream` (piston_velocity)
+      or `:upstream_fill` (piston_velocity + fill_fraction/wall_velocity).
 - `beta_definition = :total`  : `:total` (β_i+β_e) or `:ion` (β_i) for `beta`.
+- `mass_density = :ion`       : mass density behind v_A and c_s. `:ion` uses ρ = n_i m_i
+      (the shock-literature convention, where m_e is negligible at the real mass ratio);
+      `:total` uses ρ = n_i m_i + n_e m_e, correct for the plasma actually simulated.
+      The two differ by sqrt(1+1/μ) (0.5% at μ = 100) and shift v_A and c_s together,
+      so β and the ratio c_s/v_A are identical either way.
 - `mach_convention = :flow`   : how `mach_sonic` maps to the velocity jump Δv:
       `:flow`  → Δv = M_s·c_s              (M_s = Δv/c_s; reproduces the beta50 ref);
       `:shock` → Δv = M_s·c_s·(r-1)/r      (M_s = standard upstream-frame shock Mach).
@@ -87,6 +131,14 @@ See the source header for the full unit chain. Remaining keywords (`skindepth0`,
 `decomposition`, `name`, downstream-only `injection_frequency` /
 `thermal_bath_*`, `match_ds`, `maxnpart_safety`, `verbose`) carry sensible
 defaults.
+
+# Moving wall (`pgen = :upstream_fill` only)
+- `fill_fraction = 1.0`  : fraction of the box filled with plasma at t = 0. `1.0`
+      disables the wall and the setup is identical to `:upstream`.
+- `wall_velocity = 0.0`  : lab-frame speed of the wall closing off the filled region
+      [c]. `0.0` (default) picks 2Δv, comfortably above the upstream-frame shock speed
+      v_sh = Δv·r/(r-1) that it has to outrun. The summary reports the wall-to-shock
+      separation and the time at which the wall retires at x1max.
 
 # In-situ render / panning camera
 - `render = true`             : emit an `[output.render]` block (N, Bmag, T22 scenes).
@@ -122,6 +174,7 @@ function write_shock_setup(path::AbstractString;
         pgen::Symbol              = :downstream,
         beta_definition::Symbol   = :total,
         mach_convention::Symbol   = :flow,
+        mass_density::Symbol      = :ion,
         compression_ratio::Real   = 0.0,
         gamma_ad::Real            = 5 / 3,
         # --- fixed scales / knobs ---
@@ -142,6 +195,9 @@ function write_shock_setup(path::AbstractString;
         injection_frequency::Integer = 100,
         thermal_bath_offset::Real    = 20.0,
         thermal_bath_width::Real     = 10.0,
+        # --- upstream_fill-only knobs (moving wall) ---
+        fill_fraction::Real          = 1.0,
+        wall_velocity::Real          = 0.0,
         # --- in-situ render / panning camera ---
         render::Bool              = true,
         n_render_outputs::Integer = 1000,
@@ -157,32 +213,48 @@ function write_shock_setup(path::AbstractString;
 
     # ----------------------------- validation -----------------------------
     dim in (1, 2, 3)              || error("dim must be 1, 2 or 3 (got $dim)")
-    pgen in (:downstream, :upstream) ||
-        error("pgen must be :downstream or :upstream (got $pgen)")
+    pgen in (:downstream, :upstream, :upstream_fill) ||
+        error("pgen must be :downstream, :upstream or :upstream_fill (got $pgen)")
     beta_definition in (:total, :ion) ||
         error("beta_definition must be :total or :ion (got $beta_definition)")
     mach_convention in (:flow, :shock) ||
         error("mach_convention must be :flow or :shock (got $mach_convention)")
+    mass_density in (:ion, :total) ||
+        error("mass_density must be :ion or :total (got $mass_density)")
     (temperature > 0 && beta > 0 && mass_ratio > 0 && mach_sonic > 0 && runtime > 0) ||
         error("mass_ratio, temperature, mach_sonic, beta and runtime must be positive")
+    temperature_ratio > 0 || error("temperature_ratio must be positive")
     compression_ratio == 0 || compression_ratio > 1 ||
         error("compression_ratio must be 0 (auto: analytic Rankine-Hugoniot) or > 1 (got $compression_ratio)")
+    0 < fill_fraction ≤ 1 || error("fill_fraction must be in (0, 1] (got $fill_fraction)")
+    fill_fraction == 1 || pgen === :upstream_fill ||
+        error("fill_fraction < 1 needs pgen = :upstream_fill (got $pgen)")
 
     μ  = float(mass_ratio)
-    T  = float(temperature)
+    T  = float(temperature)              # T_e
+    τ  = float(temperature_ratio)        # T_i/T_e
     d0 = float(skindepth0)
 
+    # ------------------------- density split ------------------------------
+    # Entity's [scales] are defined at the fiducial density n0, but the pgens
+    # inject tot_number_density = 1 as ppc0/2 particles of each species per cell,
+    # so each species sits at n_s = FN·n0. Everything below that carries a
+    # density picks up the corresponding power of FN.
+    fn = FN_PER_SPECIES
+    # mass density in units of n_i·m_e: ions only, or the full plasma
+    μρ = mass_density === :ion ? μ : μ + 1
+
     # -------------------- field scale from β and T (set larmor0) ----------
-    #   β = fβ · T / σ0 ,  σ0 = (d0/larmor0)^2
-    #     :total → fβ = 4   (β = β_i + β_e, with T_e = T_i)
-    #     :ion   → fβ = 2   (β = β_i)
-    fβ      = beta_definition === :total ? 4.0 : 2.0
+    #   β_s = 2·fn·T_s/σ0 ,  σ0 = (d0/larmor0)^2
+    #     :total → β = β_e + β_i = 2·fn·T_e·(1+τ)/σ0
+    #     :ion   → β = β_i       = 2·fn·T_e·τ/σ0
+    fβ      = 2 * fn * (beta_definition === :total ? (1 + τ) : τ)
     σ0      = fβ * T / beta
     larmor0 = d0 / sqrt(σ0)
 
     # ----------------------------- speeds (c = 1) -------------------------
-    vA = sqrt(σ0 / μ)                      # ion Alfvén speed   [c]
-    cs = sqrt(2 * gamma_ad * T / μ)        # sound speed        [c]
+    vA = sqrt(σ0 / (fn * μρ))              # Alfvén speed       [c]
+    cs = sqrt(gamma_ad * T * (1 + τ) / μρ) # sound speed        [c]
 
     # --- compression ratio r ---
     # If `compression_ratio == 0` (the default) it is computed analytically from the
@@ -213,8 +285,10 @@ function write_shock_setup(path::AbstractString;
     CFL     = CFL0 * sqrt(dim)             # entity CFL convention
     dt      = CFL * dx                     # timestep            [code time]
 
-    d_i = sqrt(μ) * d0                     # ion inertial length [code length]
-    ρ_i = larmor0 * sqrt(T * μ)            # thermal ion Larmor radius [code length]
+    d_e  = d0 / sqrt(fn)                   # electron skin depth [code length]
+    d_i  = sqrt(μ / fn) * d0               # ion inertial length [code length]
+    ρ_i  = larmor0 * sqrt(τ * T * μ)       # thermal ion Larmor radius [code length]
+    λ_De = sqrt(T / fn) * d0               # electron Debye length [code length]
 
     # ------------------------------ box sizing ----------------------------
     # The shock recedes from the box reference frame at v_sh = Δv/(r-1); we want
@@ -238,6 +312,23 @@ function write_shock_setup(path::AbstractString;
         Nz = _res(Ltr); Lz = Nz * dx
         push!(resolution, Nz); push!(extent, [-Lz / 2, Lz / 2])
     end
+
+    # ------------------------------ moving wall ---------------------------
+    # (:upstream_fill only) The wall starts at fill_fraction·L_x and moves at
+    # v_wall in the lab frame while the window carries the box right at Δv, so it
+    # gains on the box at (v_wall - Δv) and on the front at (v_wall - v_sh_up).
+    # It retires once it reaches x1max, after which the box is filled everywhere.
+    v_sh_up  = Δv * r_comp / (r_comp - 1)   # shock speed in the upstream frame
+    v_wall   = wall_velocity > 0 ? float(wall_velocity) : 2 * Δv
+    has_wall = pgen === :upstream_fill && fill_fraction < 1
+    if has_wall
+        v_wall > v_sh_up ||
+            error("wall_velocity = $v_wall must exceed the shock speed " *
+                  "v_sh = Δv·r/(r-1) = $v_sh_up, or the shock overruns the wall")
+        v_wall < 1 || error("wall_velocity = $v_wall must be < c")
+    end
+    t_retire = has_wall ? (1 - fill_fraction) * Lx / (v_wall - Δv) : 0.0
+    wall_gap = has_wall ? fill_fraction * Lx + (v_wall - v_sh_up) * t_retire : 0.0
 
     # ---------------------------- particle budget -------------------------
     ncells   = prod(resolution)
@@ -282,7 +373,8 @@ function write_shock_setup(path::AbstractString;
     # ----------------------------- diagnostics ----------------------------
     derived = (; pgen, dim,
         larmor0, skindepth0 = d0, sigma0 = σ0, B0 = 1 / larmor0,
-        mass_ratio = μ, temperature = T,
+        mass_ratio = μ, temperature = T, temperature_ion = τ * T,
+        temperature_ratio = τ, n_frac = fn, mass_density,
         compression_ratio = r_comp, compression_auto = r_auto,
         vA, cs, drift = Δv,
         c_over_vA   = 1 / vA,
@@ -290,12 +382,15 @@ function write_shock_setup(path::AbstractString;
         M_s_flow    = Δv / cs,             # sonic  Mach (flow, = Δv/c_s)
         M_A_shock   = Δv / vA * r_comp / (r_comp - 1),
         M_s_shock   = Δv / cs * r_comp / (r_comp - 1),
-        beta_i = 2T / σ0, beta_e = 2T / σ0, beta_total = 4T / σ0,
+        beta_e = 2 * fn * T / σ0, beta_i = 2 * fn * τ * T / σ0,
+        beta_total = 2 * fn * T * (1 + τ) / σ0,
         cs_over_vA = cs / vA,
         Omega_ci_inv = Ωci_inv, t_run, dx, dt,
         nsteps = round(Int, t_run / dt),
-        d_i, rho_i = ρ_i,
-        lambda_De = sqrt(T) * d0,
+        d_e, d_i, rho_i = ρ_i,
+        lambda_De = λ_De,
+        fill_fraction = float(fill_fraction), wall_velocity = has_wall ? v_wall : 0.0,
+        has_wall, t_retire, wall_gap, v_sh_upstream = v_sh_up,
         resolution, extent, ncells, maxnpart,
         v_sh = v_sh_box, cam_vel, cam_t0, Wx_render,
         render_interval, render_width, render_height, n_render_outputs, cam3d,
@@ -472,16 +567,26 @@ $camera
 """
     end
 
-    # --- the [setup] block differs between the two pgens ---
-    if c.pgen === :upstream
+    # --- the [setup] block differs between the pgens ---
+    if c.pgen === :upstream || c.pgen === :upstream_fill
+        # the moving wall is only emitted when it is actually in use
+        wall = if !d.has_wall
+            c.pgen === :upstream_fill ?
+                "\n  fill_fraction     = 1.0   # plasma fills the whole box at t = 0, no moving wall" : ""
+        else
+            "\n  fill_fraction     = $(_ftoml(d.fill_fraction))   # filled with plasma at t = 0; a wall closes off the rest\n" *
+            "  wall_velocity     = $(_ftoml(d.wall_velocity))   # wall speed [c]; exceeds v_sh = $(@sprintf("%.4g", d.v_sh_upstream)) so the shock never catches it\n" *
+            "  # the wall reaches x1max and retires at t = $(@sprintf("%.4g", d.t_retire)) = $(@sprintf("%.3g", d.t_retire / d.Omega_ci_inv)) Omega_ci^-1,\n" *
+            "  # by which point it leads the front by $(@sprintf("%.4g", d.wall_gap)) = $(@sprintf("%.3g", d.wall_gap / d.d_i)) d_i"
+        end
         setup = """
         [setup]
-          temperature       = $(_ftoml(c.T))   # kB T / (m_e c^2); T_e = T_i
-          temperature_ratio = $(_ftoml(c.temperature_ratio))
+          temperature       = $(_ftoml(c.T))   # kB T_e / (m_e c^2)
+          temperature_ratio = $(_ftoml(c.temperature_ratio))   # T_i/T_e
           Bmag              = $(_ftoml(c.Bmag))
           Btheta            = $(_ftoml(c.Btheta))   # field angle in plane [deg]
           Bphi              = $(_ftoml(c.Bphi))   # field angle out of plane [deg]
-          piston_velocity   = $(_ftoml(c.Δv))   # = mach_sonic * c_s  [c]
+          piston_velocity   = $(_ftoml(c.Δv))   # = mach_sonic * c_s  [c]$wall
         """
     else
         setup = """
@@ -504,8 +609,9 @@ $camera
     return """
 # Entity SRPIC collisionless-shock setup  (pgen = $(c.pgen))
 # Generated by EntityTools.write_shock_setup
-#   c/v_A = $(@sprintf("%.4g", c.derived.c_over_vA))   M_A(flow) = $(@sprintf("%.4g", c.derived.M_A_flow))   M_s(flow) = $(@sprintf("%.4g", c.derived.M_s_flow))
-#   $bcomment = $(@sprintf("%.4g", c.beta_definition === :total ? c.derived.beta_total : c.derived.beta_i))   d_i = $(@sprintf("%.4g", c.derived.d_i)) dx   rho_i = $(@sprintf("%.4g", c.derived.rho_i)) dx
+#   c/v_A = $(@sprintf("%.4g", d.c_over_vA))   M_A(flow) = $(@sprintf("%.4g", d.M_A_flow))   M_s(flow) = $(@sprintf("%.4g", d.M_s_flow))   $bcomment = $(@sprintf("%.4g", c.beta_definition === :total ? d.beta_total : d.beta_i))
+#   each species is at n0/2, so d_e = $(@sprintf("%.4g", d.d_e / d.dx)) dx (skindepth0 = $(@sprintf("%.4g", d.skindepth0 / d.dx)) dx)
+#   d_i = $(@sprintf("%.4g", d.d_i / d.dx)) dx   rho_i = $(@sprintf("%.4g", d.rho_i / d.dx)) dx   lambda_De = $(@sprintf("%.4g", d.lambda_De / d.dx)) dx
 [simulation]
   name    = "$(c.name)"
   engine  = "srpic"
@@ -591,25 +697,43 @@ function _print_shock_summary(path, d; runtime, max_ratio, rL, cells_per_skindep
     @printf("│  pgen = %-10s  dim = %d   r = %.3g%s   γ = %.4g\n", d.pgen, d.dim,
             d.compression_ratio, d.compression_auto ? " (RH)" : "", gamma_ad)
     println("│  ── requested ──")
-    @printf("│   μ = %.4g   T = %.4g [m_e c²]   M_s(flow) = %.4g   β(%s) = %.4g   t = %.4g Ω_ci⁻¹\n",
-            d.mass_ratio, d.temperature, d.M_s_flow, beta_definition, beta, runtime)
+    @printf("│   μ = %.4g   T_e = %.4g [m_e c²]   T_i/T_e = %.4g   M_s(flow) = %.4g   β(%s) = %.4g   t = %.4g Ω_ci⁻¹\n",
+            d.mass_ratio, d.temperature, d.temperature_ratio, d.M_s_flow,
+            beta_definition, beta, runtime)
     println("│  ── derived scales ──")
     @printf("│   larmor0 = %.6g   skindepth0 = %.6g   σ0 = %.4g   B0 = %.4g\n",
             d.larmor0, d.skindepth0, d.sigma0, d.B0)
+    @printf("│   n_e = n_i = %.3g n0 (ppc0/2 per species)   ρ from %s masses\n",
+            d.n_frac, d.mass_density)
     @printf("│   c/v_A = %.4g   v_A = %.4g c   c_s = %.4g c   c_s/v_A = %.4g   Δv = %.4g c\n",
             d.c_over_vA, d.vA, d.cs, d.cs_over_vA, d.drift)
     @printf("│   M_A(flow) = %.4g  M_s(flow) = %.4g   |  shock-frame: M_A = %.4g  M_s = %.4g\n",
             d.M_A_flow, d.M_s_flow, d.M_A_shock, d.M_s_shock)
     @printf("│   β_i = %.4g   β_e = %.4g   β_total = %.4g\n", d.beta_i, d.beta_e, d.beta_total)
+    # delivered-vs-requested: β has to come back out of the written scales, and the
+    # two independent routes to c_s/v_A have to agree
+    βdel = beta_definition === :total ? d.beta_total : d.beta_i
+    @printf("│   check: β(%s) delivered = %.6g vs requested %.6g   [%s]\n",
+            beta_definition, βdel, beta, isapprox(βdel, beta; rtol = 1e-12) ? "ok" : "MISMATCH")
+    @printf("│   check: c_s/v_A = %.6g vs sqrt(γ β_total/2) = %.6g   [%s]\n",
+            d.cs_over_vA, sqrt(gamma_ad * d.beta_total / 2),
+            isapprox(d.cs_over_vA, sqrt(gamma_ad * d.beta_total / 2); rtol = 1e-12) ?
+                "ok" : "MISMATCH")
     println("│  ── lengths / time ──")
-    @printf("│   d_i = %.4g (= %.4g dx)   ρ_i = %.4g (= %.4g dx)   λ_De = %.4g (= %.4g dx)\n",
-            d.d_i, d.d_i / d.dx, d.rho_i, d.rho_i / d.dx, d.lambda_De, d.lambda_De / d.dx)
+    @printf("│   d_e = %.4g (= %.4g dx)   d_i = %.4g (= %.4g dx)   ρ_i = %.4g (= %.4g dx)   λ_De = %.4g (= %.4g dx)\n",
+            d.d_e, d.d_e / d.dx, d.d_i, d.d_i / d.dx,
+            d.rho_i, d.rho_i / d.dx, d.lambda_De, d.lambda_De / d.dx)
     @printf("│   Ω_ci⁻¹ = %.6g   t_run = %.6g   dx = %.4g   dt = %.4g   steps = %d\n",
             d.Omega_ci_inv, d.t_run, d.dx, d.dt, d.nsteps)
     println("│  ── grid ──")
     @printf("│   resolution = %s   extent = %s\n", string(d.resolution), string(d.extent))
-    @printf("│   cells = %.4g   maxnpart/species ≈ %.4e   (cells_per_skindepth=%g, pow2=%s)\n",
-            d.ncells, d.maxnpart, cells_per_skindepth, pow2)
+    @printf("│   cells = %.4g   maxnpart/species ≈ %.4e   (cells_per_skindepth=%g → %.3g per d_e, pow2=%s)\n",
+            d.ncells, d.maxnpart, cells_per_skindepth, d.d_e / d.dx, pow2)
+    if d.has_wall
+        @printf("│   moving wall: fill_fraction = %.3g   v_wall = %.4g c (v_sh = %.4g c)   retires at t = %.4g (%.3g Ω_ci⁻¹), %.3g d_i ahead of the front\n",
+                d.fill_fraction, d.wall_velocity, d.v_sh_upstream, d.t_retire,
+                d.t_retire / d.Omega_ci_inv, d.wall_gap / d.d_i)
+    end
     if d.lambda_De < d.dx
         @printf("│  ⚠ λ_De = %.3g < dx = %.3g (%.2f cells): risk of finite-grid heating; raise cells_per_skindepth or T.\n",
                 d.lambda_De, d.dx, d.lambda_De / d.dx)

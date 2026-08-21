@@ -14,17 +14,18 @@
 """
     omega_pe(u::EntityUnits)
 
-Electron plasma frequency in inverse code-time units, ω_pe = c / d_e = 1 / skindepth0.
+Electron plasma frequency in inverse code-time units, ω_pe = c / d_e =
+sqrt(`n_frac`) / skindepth0 (≡ `u.omega_pe`).
 """
-omega_pe(u::EntityUnits) = 1 / u.skindepth0
+omega_pe(u::EntityUnits) = u.omega_pe
 
 """
     omega_ce(u::EntityUnits)
 
-Electron cyclotron frequency Ω_e = |q| B0 / m = B0 = 1 / larmor0 (≡ `u.omegaB0`).
+Electron cyclotron frequency Ω_e = |q| B0 / m = B0 = 1 / larmor0 (≡ `u.Omega_ce`).
 Multiply a code-unit time by this to get Ω_e t.
 """
-omega_ce(u::EntityUnits) = u.omegaB0
+omega_ce(u::EntityUnits) = u.Omega_ce
 
 """
     v_th(T; mass = 1)
@@ -46,11 +47,11 @@ rho_e(u::EntityUnits, T::Real; mass::Real = 1.0) = v_th(T; mass) * u.larmor0
     betae(u::EntityUnits, T)
 
 Electron plasma beta at temperature `T`,
-β_e = 2 n T / B0² = 2 T / σ0  (n = n0 = 1, B0 = 1 / larmor0, σ0 = (skindepth0/larmor0)²).
+β_e = 2 n_e T / B0² = 2·`n_frac`·T / σ0  (B0 = 1 / larmor0, σ0 = (skindepth0/larmor0)²).
 
 For the conduction_komarov runs this is the hot-side β evaluated with T = T_hot.
 """
-betae(u::EntityUnits, T::Real) = 2 * T / u.sigma0
+betae(u::EntityUnits, T::Real) = 2 * u.n_frac * T / u.sigma0
 
 """
     q_free(T; n = 1, mass = 1, prefactor = 1)

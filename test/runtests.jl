@@ -67,8 +67,15 @@ using Makie
         
         # Test fieldlines plot with the dictionary template
         sample_dict = Dict(:template => "monopole", :nth => 5, :radius => 2.0)
-        @test_nowarn plot_fieldlines!(ax, r_coords, th_coords, fr_data, fth_data; 
+        @test_nowarn plot_fieldlines!(ax, r_coords, th_coords, fr_data, fth_data;
                                       sample_template=sample_dict, maxsteps=5)
     end
+
+    # Shock setup generator: normalisation round-trip and plasma identities.
+    # Also runnable on its own with `julia test/shock_setup.jl` (no Makie needed).
+    include("shock_setup.jl")
+
+    # Unit conversion factors: same chain read back out of a written setup.
+    include("units.jl")
 
 end
