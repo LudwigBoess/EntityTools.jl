@@ -31,6 +31,7 @@ module EntityTools
     include("calc/spectra.jl")
     include("calc/powerspectrum.jl")
     include("debug/parse_timing.jl")
+    include("units/constants.jl")
     include("units/structs.jl")
     include("units/setup.jl")
     include("units/length.jl")
@@ -62,6 +63,7 @@ module EntityTools
             adios2_throughput,
             EntityData,
             EntityUnits,
+            EntityUnitsCGS,
             find_closest_time,
             read_particles,
             read_field,

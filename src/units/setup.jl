@@ -252,3 +252,30 @@ function _units_from_settings(settings::AbstractDict, species;
     check && check_scales(u, settings)
     return u
 end
+
+"""
+    EntityUnitsCGS(data::EntityData; kwargs...)
+    EntityUnitsCGS(path::String; kwargs...)
+
+Read the normalised scales of a run — a directory, an [`EntityData`](@ref) or a
+parameter file — and attach physical units to them.
+
+The anchor (`n_e`, `n0`, `B0` or `length_unit`) and the `mass_unit` /
+`charge_unit` overrides are those of [`EntityUnitsCGS(::EntityUnits)`](@ref);
+every remaining keyword is passed on to [`EntityUnits(::EntityData)`](@ref), so
+`n_frac`, `mass_ratio`, `temperature` and friends work as they do there.
+
+    u = EntityUnitsCGS("run/shock.toml"; n_frac = 0.5, n_e = 5.0)
+"""
+function EntityUnitsCGS(src::Union{EntityData, String};
+                        n_e               = nothing,
+                        n0                = nothing,
+                        B0                = nothing,
+                        length_unit       = nothing,
+                        mass_unit::Real   = m_e_cgs,
+                        charge_unit::Real = q_e_cgs,
+                        kwargs...)
+
+    return EntityUnitsCGS(EntityUnits(src; kwargs...);
+                          n_e, n0, B0, length_unit, mass_unit, charge_unit)
+end

@@ -245,6 +245,203 @@ const UTOL = 1e-9
         @test isempty(read_species(joinpath(UTMP, "does_not_exist.info")))
     end
 
+    # -------------------------------------------------------------------------
+    #  EntityUnitsCGS: the same run in cgs-Gaussian units.
+    #
+    #  `EntityUnitsCGS` is built by rescaling `EntityUnits`, so the checks below
+    #  re-derive every field from the *cgs* plasma relations
+    #    omega_p = sqrt(4 pi n q^2/m)   Omega_B = q B/(m c)   v_A = B/sqrt(4 pi rho)
+    #  instead, plus the NRL-formulary numbers, so an error in the unit chain
+    #  cannot cancel out of both sides.
+    # -------------------------------------------------------------------------
+    @testset "EntityUnitsCGS" begin
+
+        cc, qe, me = EntityTools.c_cgs, EntityTools.q_e_cgs, EntityTools.m_e_cgs
+        kB, eV     = EntityTools.k_B_cgs, EntityTools.eV_cgs
+
+        n_e = 5.0                       # electrons per cm^3, solar-wind-like
+        uc  = EntityUnitsCGS(u; n_e)
+
+        @testset "field parity with EntityUnits" begin
+            fu, fc = fieldnames(EntityUnits), fieldnames(EntityUnitsCGS)
+            @test fc[1:length(fu)] == fu
+            @test fc[length(fu)+1:end] == (:length_unit, :time_unit, :speed_unit,
+                                           :mass_unit, :charge_unit, :Bfield_unit,
+                                           :energy_unit)
+            @test uc isa EntityUnitsCGS{Float64}
+            # both show methods run
+            @test !isempty(sprint(show, uc))
+            @test !isempty(sprint(show, MIME"text/plain"(), uc))
+        end
+
+        @testset "dimensionless fields are unchanged" begin
+            @test uc.sigma0            == u.sigma0
+            @test uc.beta_e            == u.beta_e
+            @test uc.beta_i            == u.beta_i
+            @test uc.beta              == u.beta
+            @test uc.mass_ratio        == u.mass_ratio
+            @test uc.n_frac            == u.n_frac
+            @test uc.mu_rho            == u.mu_rho
+            @test uc.temperature_ratio == u.temperature_ratio
+            @test uc.gamma_ad          == u.gamma_ad
+            @test uc.ppc0              == u.ppc0
+            @test uc.dim               == u.dim
+        end
+
+        @testset "cgs plasma relations" begin
+            n_i = uc.n_frac * uc.n0             # ion density [cm^-3]
+            m_i = uc.mass_ratio * me            # ion mass [g]
+            ρ   = uc.mu_rho * n_i * me          # mass density [g/cm^3]
+            Te  = kB * uc.temperature           # [erg]
+            Ti  = uc.temperature_ratio * Te
+
+            # the anchor comes back out
+            @test uc.n_frac * uc.n0 ≈ n_e rtol = 1e-12
+
+            # frequencies
+            @test uc.omega_pe ≈ sqrt(4π * n_e * qe^2 / me)  rtol = 1e-12
+            @test uc.omega_pi ≈ sqrt(4π * n_i * qe^2 / m_i) rtol = 1e-12
+            @test uc.Omega_ce ≈ qe * uc.B0 / (me * cc)      rtol = 1e-12
+            @test uc.Omega_ci ≈ qe * uc.B0 / (m_i * cc)     rtol = 1e-12
+            @test uc.omegaB0  == uc.Omega_ce
+
+            # lengths
+            @test uc.d_e       ≈ cc / uc.omega_pe            rtol = 1e-12
+            @test uc.d_i       ≈ cc / uc.omega_pi            rtol = 1e-12
+            @test uc.lambda_De ≈ sqrt(Te / (4π * n_e * qe^2)) rtol = 1e-12
+            @test uc.rho_e     ≈ uc.v_the / uc.Omega_ce      rtol = 1e-12
+            @test uc.rho_i     ≈ uc.v_thi / uc.Omega_ci      rtol = 1e-12
+
+            # speeds
+            @test uc.v_the ≈ sqrt(Te / me)                    rtol = 1e-12
+            @test uc.v_thi ≈ sqrt(Ti / m_i)                   rtol = 1e-12
+            @test uc.v_A   ≈ uc.B0 / sqrt(4π * ρ)             rtol = 1e-12
+            @test uc.c_s   ≈ sqrt(γ * (Te + Ti) / (uc.mu_rho * me)) rtol = 1e-12
+            @test uc.v_A < cc && uc.c_s < cc
+
+            # beta, from the cgs definition rather than 2 fn T/sigma0
+            @test uc.beta_e ≈ 8π * n_e * Te / uc.B0^2      rtol = 1e-12
+            @test uc.beta_i ≈ 8π * n_i * Ti / uc.B0^2      rtol = 1e-12
+
+            # temperature: the code unit is m_e c^2
+            @test kB * uc.temperature ≈ u.temperature * me * cc^2 rtol = 1e-12
+            @test uc.temperature * kB / eV ≈ T * me * cc^2 / eV    rtol = 1e-12
+
+            # the fiducial scales are the skin depth and Larmor radius at v = c
+            @test uc.skindepth0 ≈ cc / sqrt(4π * uc.n0 * qe^2 / me) rtol = 1e-12
+            @test uc.larmor0    ≈ cc / uc.Omega_ce                  rtol = 1e-12
+            @test uc.sigma0     ≈ (uc.skindepth0 / uc.larmor0)^2    rtol = 1e-12
+
+            # macroparticle bookkeeping: q0 is the weight the fiducial cell carries
+            @test uc.V0 ≈ u.V0 * uc.length_unit^3     rtol = 1e-12
+            @test uc.q0 ≈ uc.n0 * uc.V0 / uc.ppc0 * qe rtol = 1e-12
+        end
+
+        @testset "NRL formulary numbers" begin
+            T_eV = uc.temperature * kB / eV
+            @test uc.omega_pe  ≈ 5.64e4 * sqrt(n_e)            rtol = 1e-3
+            @test uc.Omega_ce  ≈ 1.76e7 * uc.B0                rtol = 1e-3
+            @test uc.d_e       ≈ 5.31e5 / sqrt(n_e)            rtol = 2e-3
+            @test uc.lambda_De ≈ 7.43e2 * sqrt(T_eV / n_e)     rtol = 1e-3
+        end
+
+        @testset "all four anchors agree" begin
+            for other in (EntityUnitsCGS(u; n0 = uc.n0),
+                          EntityUnitsCGS(u; B0 = uc.B0),
+                          EntityUnitsCGS(u; length_unit = uc.length_unit))
+                for f in fieldnames(EntityUnitsCGS)
+                    a, b = getfield(uc, f), getfield(other, f)
+                    @test a isa Int ? a == b : isapprox(a, b; rtol = 1e-12, nans = true)
+                end
+            end
+        end
+
+        @testset "code -> cgs conversion factors" begin
+            @test uc.length_unit  ≈ uc.d_i / u.d_i        rtol = 1e-12
+            @test uc.time_unit    ≈ uc.length_unit / cc   rtol = 1e-12
+            @test uc.speed_unit   == cc
+            @test uc.mass_unit    == me
+            @test uc.charge_unit  == qe
+            @test uc.energy_unit  ≈ me * cc^2             rtol = 1e-12
+            @test uc.Bfield_unit  ≈ uc.B0 / u.B0          rtol = 1e-12
+            # a code length/time/field converts to the cgs scale it names
+            @test u.rho_i * uc.length_unit ≈ uc.rho_i     rtol = 1e-12
+            @test (1 / u.Omega_ci) * uc.time_unit ≈ 1 / uc.Omega_ci rtol = 1e-12
+            @test u.v_A * uc.speed_unit ≈ uc.v_A          rtol = 1e-12
+        end
+
+        @testset "conversion factors are the reciprocal scales" begin
+            @test uc.d_e * uc.x_de              ≈ 1.0 rtol = 1e-12
+            @test uc.d_i * uc.x_di              ≈ 1.0 rtol = 1e-12
+            @test uc.rho_e * uc.x_rho_e         ≈ 1.0 rtol = 1e-12
+            @test uc.rho_i * uc.x_rho_i         ≈ 1.0 rtol = 1e-12
+            @test uc.lambda_De * uc.x_lambda_De ≈ 1.0 rtol = 1e-12
+            @test uc.dx * uc.x_cells            ≈ 1.0 rtol = 1e-12
+            @test uc.t_omega_pe == uc.omega_pe
+            @test uc.t_Omega_ci == uc.Omega_ci
+            @test (1 / uc.Omega_ci) * uc.t_Omega_ci ≈ 1.0 rtol = 1e-12
+            @test uc.v_A * uc.v_vA ≈ 1.0 rtol = 1e-12
+            @test uc.c_s * uc.v_cs ≈ 1.0 rtol = 1e-12
+        end
+
+        @testset "ratios survive the rescaling" begin
+            @test uc.d_i / uc.d_e   ≈ u.d_i / u.d_e   rtol = 1e-12
+            @test uc.rho_i / uc.d_i ≈ u.rho_i / u.d_i rtol = 1e-12
+            @test uc.c_s / uc.v_A   ≈ u.c_s / u.v_A   rtol = 1e-12
+            @test uc.v_A / cc       ≈ u.v_A           rtol = 1e-12
+            @test uc.Omega_ce / uc.omega_pe ≈ u.Omega_ce / u.omega_pe rtol = 1e-12
+            # the box in d_i is a code-unit number and must not move
+            t = TOML.parsefile(path)
+            L_code = t["grid"]["extent"][1][2]
+            @test (L_code * uc.length_unit) * uc.x_di ≈ L_code * u.x_di rtol = 1e-12
+        end
+
+        @testset "mass and charge unit overrides" begin
+            # read the unit-mass species as protons: a hybrid-style mapping
+            up = EntityUnitsCGS(u; n_e, mass_unit = EntityTools.m_p_cgs)
+            mp = EntityTools.m_p_cgs
+            @test up.omega_pe ≈ sqrt(4π * n_e * qe^2 / mp) rtol = 1e-12
+            @test up.Omega_ce ≈ qe * up.B0 / (mp * cc)     rtol = 1e-12
+            @test up.energy_unit ≈ mp * cc^2               rtol = 1e-12
+            @test kB * up.temperature ≈ u.temperature * mp * cc^2 rtol = 1e-12
+            # heavier unit mass at fixed density: lower omega_pe, longer d_e
+            @test up.omega_pe < uc.omega_pe && up.d_e > uc.d_e
+            # dimensionless quantities cannot notice
+            @test up.beta ≈ uc.beta rtol = 1e-12
+
+            # doubling the charge unit at fixed density doubles omega_pe
+            u2 = EntityUnitsCGS(u; n_e, charge_unit = 2qe)
+            @test u2.omega_pe ≈ 2 * uc.omega_pe rtol = 1e-12
+            @test u2.beta ≈ uc.beta             rtol = 1e-12
+        end
+
+        @testset "run directory and parameter file" begin
+            # the parameter-file constructor passes n_frac through to EntityUnits
+            uf = EntityUnitsCGS(path; n_frac = fn, gamma_ad = γ, n_e)
+            @test uf.n_frac == fn
+            @test uf.d_i ≈ uc.d_i             rtol = 1e-12
+            @test uf.B0  ≈ uc.B0              rtol = 1e-12
+            @test uf.temperature ≈ uc.temperature rtol = UTOL
+        end
+
+        @testset "temperature-free runs report NaN" begin
+            u3 = EntityUnitsCGS(EntityUnits(1.0, 10.0; mass_ratio = 100.0, n_frac = 0.5);
+                                n_e = 1.0)
+            @test isnan(u3.temperature) && isnan(u3.beta) && isnan(u3.rho_i)
+            @test isnan(u3.x_rho_i) && isnan(u3.v_cs)
+            @test all(isfinite, (u3.d_e, u3.d_i, u3.v_A, u3.Omega_ci, u3.B0,
+                                 u3.n0, u3.q0, u3.length_unit))
+        end
+
+        @testset "invalid input is rejected" begin
+            @test_throws ErrorException EntityUnitsCGS(u)
+            @test_throws ErrorException EntityUnitsCGS(u; n_e, B0 = 1.0)
+            @test_throws ErrorException EntityUnitsCGS(u; n_e = -1.0)
+            @test_throws ErrorException EntityUnitsCGS(u; n_e, mass_unit = 0.0)
+            @test_throws ErrorException EntityUnitsCGS(u; n_e, charge_unit = -1.0)
+        end
+    end
+
     @testset "invalid input is rejected" begin
         @test_throws ErrorException EntityUnits(-1.0, 10.0)
         @test_throws ErrorException EntityUnits(1.0, -10.0)
